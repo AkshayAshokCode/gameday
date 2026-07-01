@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -79,5 +80,8 @@ export function useAuth() {
 
 export function useSupabase() {
   const { accessToken } = useAuth();
-  return createBrowserClient(accessToken ?? undefined);
+  // Memoized on the token so callers get a stable client reference — without
+  // this, a new client is created every render, which breaks any effect that
+  // depends on it (re-runs forever instead of once).
+  return useMemo(() => createBrowserClient(accessToken ?? undefined), [accessToken]);
 }

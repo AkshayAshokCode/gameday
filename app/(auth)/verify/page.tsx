@@ -56,7 +56,9 @@ export default function VerifyPage() {
       sessionStorage.removeItem("otp_phone");
       sessionStorage.removeItem("otp_session");
 
-      router.replace("/");
+      const redirectTo = sessionStorage.getItem("post_login_redirect");
+      sessionStorage.removeItem("post_login_redirect");
+      router.replace(redirectTo || "/");
     } catch (err: any) {
       setError(err.message ?? "Verification failed");
     } finally {
