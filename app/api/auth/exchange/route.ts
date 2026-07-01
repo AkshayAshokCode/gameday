@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Upsert user in Supabase (service role — bypass RLS)
+    // 2. Upsert user in Supabase (secret key — bypass RLS)
     const db = createServerClient();
     const { data: existing } = await db
       .from("users")

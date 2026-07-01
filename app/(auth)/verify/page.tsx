@@ -92,7 +92,7 @@ export default function VerifyPage() {
               placeholder="123456"
               value={otp}
               onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-center text-xl tracking-[0.5em] focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+              className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-center text-xl tracking-[0.5em] text-gray-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
             />
           </div>
 
@@ -110,7 +110,7 @@ export default function VerifyPage() {
               placeholder="e.g. Akshay"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+              className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
             />
           </div>
 
