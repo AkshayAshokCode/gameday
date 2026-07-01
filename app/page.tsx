@@ -66,14 +66,16 @@ export default function HomePage() {
           ) : (
             <ul className="space-y-2">
               {groups.map((g) => (
-                <li
-                  key={g.id}
-                  className="rounded-lg border border-gray-200 bg-white p-4"
-                >
-                  <p className="font-medium text-gray-900">{g.name}</p>
-                  <p className="mt-1 text-xs text-gray-400">
-                    Invite link: /invite/{g.invite_code}
-                  </p>
+                <li key={g.id}>
+                  <Link
+                    href={`/groups/${g.id}`}
+                    className="block rounded-lg border border-gray-200 bg-white p-4 hover:border-green-500"
+                  >
+                    <p className="font-medium text-gray-900">{g.name}</p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      Invite link: /invite/{g.invite_code}
+                    </p>
+                  </Link>
                 </li>
               ))}
             </ul>
