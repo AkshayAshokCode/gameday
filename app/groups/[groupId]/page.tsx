@@ -4,10 +4,46 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth, useSupabase } from "@/lib/auth-context";
+import { AvatarRail } from "@/components/AvatarRail";
+import { CountUp } from "@/components/CountUp";
+import { NeoPopButton } from "@/components/NeoPopButton";
+import { StreakMilestoneOverlay, useStreakMilestone } from "@/components/StreakMilestone";
 import type { Database } from "@/lib/supabase/types";
 
 type Group = Database["public"]["Tables"]["groups"]["Row"];
 type Session = Database["public"]["Tables"]["sessions"]["Row"];
+
+interface HeroVote {
+  user_id: string;
+  voted_in: boolean;
+  guest_count: number;
+  users: { name: string } | null;
+}
+
+interface StreakRow {
+  user_id: string;
+  attended: boolean;
+  sessions: { scheduled_at: string | null } | null;
+}
+
+interface MemberRow {
+  user_id: string;
+  users: { name: string } | null;
+}
+
+function formatDay(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatSlot(start: string, end: string | null) {
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return end ? `${fmt(start)} – ${fmt(end)}` : fmt(start);
+}
 
 export default function GroupPage() {
   const { groupId } = useParams<{ groupId: string }>();
@@ -16,7 +52,12 @@ export default function GroupPage() {
   const supabase = useSupabase();
   const [group, setGroup] = useState<Group | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [heroVotes, setHeroVotes] = useState<HeroVote[]>([]);
+  const [heroWaitlisted, setHeroWaitlisted] = useState<string[]>([]);
+  const [topStreaks, setTopStreaks] = useState<{ name: string; streak: number }[]>([]);
+  const [myStreak, setMyStreak] = useState(0);
   const [loading, setLoading] = useState(true);
+  const { celebrating, dismiss } = useStreakMilestone([{ key: groupId, streak: myStreak }]);
 
   useEffect(() => {
     if (!isLoading && !user) router.replace("/login");
@@ -24,95 +65,274 @@ export default function GroupPage() {
 
   useEffect(() => {
     if (!user) return;
-    Promise.all([
-      supabase.from("groups").select("*").eq("id", groupId).single(),
-      supabase
-        .from("sessions")
-        .select("*")
-        .eq("group_id", groupId)
-        .order("created_at", { ascending: false }),
-    ]).then(([groupRes, sessionsRes]) => {
+
+    (async () => {
+      const [groupRes, sessionsRes, membersRes, attendanceRes] = await Promise.all([
+        supabase.from("groups").select("*").eq("id", groupId).single(),
+        supabase
+          .from("sessions")
+          .select("*")
+          .eq("group_id", groupId)
+          .order("created_at", { ascending: false }),
+        supabase.from("group_members").select("user_id, users(name)").eq("group_id", groupId),
+        supabase
+          .from("attendance")
+          .select("user_id, attended, sessions!inner(scheduled_at, group_id)")
+          .eq("sessions.group_id", groupId),
+      ]);
+
       setGroup(groupRes.data);
-      setSessions(sessionsRes.data ?? []);
+      const sessionList = sessionsRes.data ?? [];
+      setSessions(sessionList);
+
+      // Hero = the latest still-active session, else the most recent one.
+      const hero =
+        sessionList.find((s) => s.status !== "completed") ?? sessionList[0] ?? null;
+
+      if (hero) {
+        const [votesRes, waitlistRes] = await Promise.all([
+          supabase
+            .from("session_votes")
+            .select("user_id, voted_in, guest_count, users(name)")
+            .eq("session_id", hero.id),
+          supabase.from("session_waitlist").select("user_id").eq("session_id", hero.id),
+        ]);
+        setHeroVotes((votesRes.data ?? []) as unknown as HeroVote[]);
+        setHeroWaitlisted((waitlistRes.data ?? []).map((w) => w.user_id));
+      }
+
+      // Streak preview: current run of attended sessions per member, top 3.
+      const members = (membersRes.data ?? []) as unknown as MemberRow[];
+      const records = (attendanceRes.data ?? []) as unknown as StreakRow[];
+      const byUser = new Map<string, StreakRow[]>();
+      for (const r of records) {
+        if (!r.sessions?.scheduled_at) continue;
+        const list = byUser.get(r.user_id) ?? [];
+        list.push(r);
+        byUser.set(r.user_id, list);
+      }
+      const streaks = members.map((m) => {
+        const rows = (byUser.get(m.user_id) ?? []).sort(
+          (a, b) =>
+            new Date(a.sessions!.scheduled_at!).getTime() -
+            new Date(b.sessions!.scheduled_at!).getTime()
+        );
+        let streak = 0;
+        for (let i = rows.length - 1; i >= 0; i--) {
+          if (rows[i].attended) streak++;
+          else break;
+        }
+        return { userId: m.user_id, name: m.users?.name ?? "Unknown", streak };
+      });
+      setMyStreak(streaks.find((s) => s.userId === user.id)?.streak ?? 0);
+      setTopStreaks(
+        streaks
+          .filter((s) => s.streak > 0)
+          .sort((a, b) => b.streak - a.streak)
+          .slice(0, 3)
+      );
+
       setLoading(false);
-    });
+    })();
   }, [user, supabase, groupId]);
 
   if (isLoading || !user || loading) return null;
   if (!group) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-        <p className="text-sm text-gray-500">
+      <main className="min-h-screen flex items-center justify-center bg-night px-4">
+        <p className="font-mono text-xs uppercase tracking-wider text-chalk-dim">
           Group not found, or you&apos;re not a member.
         </p>
       </main>
     );
   }
 
+  const hero = sessions.find((s) => s.status !== "completed") ?? sessions[0] ?? null;
+  const pastSessions = sessions.filter((s) => s.id !== hero?.id);
+
+  const waitlistedIds = new Set(heroWaitlisted);
+  const confirmed = heroVotes.filter((v) => v.voted_in && !waitlistedIds.has(v.user_id));
+  const headcount = confirmed.reduce((sum, v) => sum + 1 + v.guest_count, 0);
+  const iAmIn = confirmed.some((v) => v.user_id === user.id);
+
+  const heroStatusLabel =
+    hero?.status === "proposing"
+      ? "Day poll live"
+      : hero?.status === "open"
+      ? "Poll open"
+      : hero?.status === "locked"
+      ? "Squads forming"
+      : "Completed";
+
+  const heroCta =
+    hero?.status === "proposing"
+      ? "PICK YOUR DAYS"
+      : hero?.status === "open"
+      ? iAmIn
+        ? "YOU'RE IN — VIEW"
+        : "I'M IN"
+      : hero?.status === "locked"
+      ? "VIEW SQUAD"
+      : "VIEW SESSION";
+
   return (
-    <main className="min-h-screen bg-gray-50 p-8">
-      <div className="mx-auto max-w-md space-y-6">
-        <div>
-          <Link href="/" className="text-sm text-gray-500 hover:text-gray-700">
-            ← Home
-          </Link>
-          <h1 className="mt-1 text-2xl font-bold text-gray-900">{group.name}</h1>
-          <p className="text-xs text-gray-400">Invite link: /invite/{group.invite_code}</p>
+    <main className="min-h-screen bg-night p-6">
+      <StreakMilestoneOverlay celebrating={celebrating} dismiss={dismiss} />
+      <div className="mx-auto max-w-md space-y-8">
+        <div className="flex items-start justify-between pt-2">
+          <div>
+            <Link
+              href="/"
+              className="font-mono text-[11px] uppercase tracking-widest text-chalk-dim hover:text-chalk"
+            >
+              ← Home
+            </Link>
+            <h1 className="mt-1 text-3xl font-bold tracking-tight text-chalk">
+              {group.name}
+            </h1>
+            <p className="mt-1 font-mono text-[11px] uppercase tracking-wider text-chalk-dim">
+              Invite · /invite/{group.invite_code}
+            </p>
+          </div>
+          {myStreak > 0 && (
+            <div className="rounded-full border border-line bg-turf px-3 py-1.5 font-mono text-xs text-chalk">
+              🔥 {myStreak}
+            </div>
+          )}
         </div>
 
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-700">Sessions</h2>
+        {hero ? (
+          <div className="rounded-2xl border border-line bg-turf p-6 space-y-5">
+            <div className="flex items-center gap-2">
+              {(hero.status === "open" || hero.status === "proposing") && (
+                <span className="h-2 w-2 animate-pulse rounded-full bg-floodlight" />
+              )}
+              <p className="font-mono text-[11px] uppercase tracking-widest text-chalk-dim">
+                {heroStatusLabel}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-2xl font-bold tracking-tight text-chalk">
+                {hero.status === "proposing" || !hero.scheduled_at
+                  ? "Which day works?"
+                  : formatDay(hero.scheduled_at)}
+              </p>
+              {hero.scheduled_at && hero.status !== "proposing" && (
+                <p className="mt-0.5 font-mono text-xs uppercase tracking-wider text-chalk-dim">
+                  {formatSlot(hero.scheduled_at, hero.ends_at)}
+                </p>
+              )}
+            </div>
+
+            {hero.status !== "proposing" && (
+              <div>
+                <p className="font-mono text-[11px] uppercase tracking-widest text-chalk-dim">
+                  Confirmed
+                </p>
+                <p className="mt-1 text-6xl font-bold tracking-tighter text-chalk">
+                  <CountUp value={headcount} />
+                  <span className="text-2xl font-semibold text-chalk-dim">
+                    /{hero.max_capacity}
+                  </span>
+                </p>
+                <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-night">
+                  <div
+                    className="h-full rounded-full bg-floodlight transition-all duration-500"
+                    style={{
+                      width: `${Math.min(100, (headcount / hero.max_capacity) * 100)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {confirmed.length > 0 && (
+              <AvatarRail names={confirmed.map((v) => v.users?.name ?? "?")} />
+            )}
+
+            <NeoPopButton
+              className="w-full"
+              onClick={() => router.push(`/groups/${groupId}/sessions/${hero.id}`)}
+            >
+              {heroCta}
+            </NeoPopButton>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-line bg-turf p-6 text-center space-y-4">
+            <p className="font-mono text-xs uppercase tracking-wider text-chalk-dim">
+              No session this week. Start one.
+            </p>
+            <NeoPopButton
+              onClick={() => router.push(`/groups/${groupId}/sessions/new`)}
+            >
+              NEW SESSION
+            </NeoPopButton>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between">
+          <Link
+            href={`/groups/${groupId}/leaderboard`}
+            className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
+          >
+            🏆 Leaderboard
+          </Link>
+          {hero && (
             <Link
               href={`/groups/${groupId}/sessions/new`}
-              className="text-sm font-medium text-green-600 hover:text-green-700"
+              className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
             >
               + New session
             </Link>
-          </div>
+          )}
+        </div>
 
-          {sessions.length === 0 ? (
-            <p className="text-sm text-gray-400">No sessions yet.</p>
-          ) : (
+        {topStreaks.length > 0 && (
+          <div className="rounded-xl border border-line bg-turf p-4 space-y-2">
+            <p className="font-mono text-[11px] uppercase tracking-widest text-chalk-dim">
+              Top streaks
+            </p>
+            <ul className="space-y-1.5">
+              {topStreaks.map((s, i) => (
+                <li key={s.name + i} className="flex items-center justify-between">
+                  <span className="text-sm text-chalk">
+                    <span className="mr-2 font-mono text-xs text-chalk-dim">{i + 1}</span>
+                    {s.name}
+                  </span>
+                  <span className="font-mono text-xs text-chalk">🔥 {s.streak}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {pastSessions.length > 0 && (
+          <div className="space-y-2">
+            <p className="font-mono text-[11px] uppercase tracking-widest text-chalk-dim">
+              More sessions
+            </p>
             <ul className="space-y-2">
-              {sessions.map((s) => (
+              {pastSessions.map((s) => (
                 <li key={s.id}>
                   <Link
                     href={`/groups/${groupId}/sessions/${s.id}`}
-                    className="block rounded-lg border border-gray-200 bg-white p-4 hover:border-green-500"
+                    className="flex items-center justify-between rounded-lg border border-line px-4 py-3 transition-colors hover:border-chalk-dim"
                   >
-                    <p className="font-medium text-gray-900">
+                    <span className="text-sm text-chalk">
                       {s.status === "proposing" || !s.scheduled_at
-                        ? "🗳️ Day poll in progress"
-                        : new Date(s.scheduled_at).toLocaleDateString(undefined, {
-                            weekday: "short",
-                            month: "short",
-                            day: "numeric",
-                          })}
-                    </p>
-                    {s.scheduled_at && s.status !== "proposing" && (
-                      <p className="text-xs text-gray-500">
-                        {new Date(s.scheduled_at).toLocaleTimeString(undefined, {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })}
-                        {s.ends_at
-                          ? ` – ${new Date(s.ends_at).toLocaleTimeString(undefined, {
-                              hour: "numeric",
-                              minute: "2-digit",
-                            })}`
-                          : ""}
-                      </p>
-                    )}
-                    <p className="mt-1 text-xs text-gray-400">
-                      {s.status === "open" ? "Voting open" : s.status} · cap {s.max_capacity}
-                    </p>
+                        ? "🗳️ Day poll"
+                        : formatDay(s.scheduled_at)}
+                    </span>
+                    <span className="font-mono text-[11px] uppercase tracking-wider text-chalk-dim">
+                      {s.status}
+                    </span>
                   </Link>
                 </li>
               ))}
             </ul>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </main>
   );

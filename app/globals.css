@@ -1,19 +1,42 @@
 @import "tailwindcss";
 
+/* ─── "Floodlit" design tokens ───────────────────────────────────────────────
+   A turf at night under floodlights: everything dark except what matters.
+   Full spec: Notion → GameDay — UI/UX Design Plan (CRED-level).
+   Rule: floodlight yellow is earned, not decorative — one per screen, max.  */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --night: #0a0e0b; /* app background — near-black, green undertone */
+  --turf: #121a14; /* card / surface background */
+  --turf-raised: #1a241c; /* elevated surfaces, modals, pressed states */
+  --floodlight: #e8ff47; /* THE accent — primary actions, live states, streaks */
+  --floodlight-shadow: #a8bc2e; /* NeoPOP offset shadow under primary buttons */
+  --chalk: #f2f5ef; /* primary text — warm white, like pitch chalk */
+  --chalk-dim: #7e8b80; /* secondary text, labels */
+  --card-red: #ff4d4d; /* destructive / "voted out" / missed states only */
+  --line: rgba(242, 245, 239, 0.07); /* hairline borders */
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-night: var(--night);
+  --color-turf: var(--turf);
+  --color-turf-raised: var(--turf-raised);
+  --color-floodlight: var(--floodlight);
+  --color-floodlight-shadow: var(--floodlight-shadow);
+  --color-chalk: var(--chalk);
+  --color-chalk-dim: var(--chalk-dim);
+  --color-card-red: var(--card-red);
+  --color-line: var(--line);
+  --font-sans: var(--font-space-grotesk);
+  --font-mono: var(--font-jetbrains-mono);
+
+  /* Motion system: standard = fast out gentle settle; celebration = overshoot,
+     ceremonies only. Numbers never jump — count up/down. */
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-celebration: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--night);
+  color: var(--chalk);
+  font-family: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
 }

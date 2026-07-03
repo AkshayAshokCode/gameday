@@ -1,19 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "motion/react";
+import confetti from "canvas-confetti";
 import { useAuth, useSupabase } from "@/lib/auth-context";
+import { buildUpiLink, generateUpiQr } from "@/lib/upi";
+import { CountUp } from "@/components/CountUp";
+import { HoldToConfirm } from "@/components/HoldToConfirm";
+import { NeoPopButton } from "@/components/NeoPopButton";
+import { SquadRevealOverlay } from "@/components/SquadReveal";
+import { useVoteCeremony } from "@/components/VoteCeremony";
 
 interface SessionDetail {
   id: string;
   group_id: string;
   organizer_id: string | null;
+  payment_collector_id: string | null;
   scheduled_at: string | null;
   ends_at: string | null;
   max_capacity: number;
   status: string;
-  turfs: { name: string; address: string | null } | null;
+  cost_per_head: number | null;
+  turfs: { name: string; address: string | null; lat: number | null; lng: number | null } | null;
 }
 
 interface TurfOption {
@@ -49,6 +59,7 @@ interface VoteRow {
   user_id: string;
   voted_in: boolean;
   guest_count: number;
+  guest_names: string[];
   users: { name: string } | null;
 }
 
@@ -58,18 +69,58 @@ interface WaitlistRow {
   users: { name: string } | null;
 }
 
+interface AttendanceRow {
+  user_id: string;
+  attended: boolean;
+}
+
+interface PaymentRow {
+  id: string;
+  payer_id: string;
+  amount: number | null;
+  status: string;
+  payer: { name: string } | null;
+}
+
+interface GroupMemberOption {
+  user_id: string;
+  users: { name: string } | null;
+}
+
+interface TeamRow {
+  user_id: string;
+  team: string;
+  users: { name: string } | null;
+}
+
+// Shared quiet-zone form styling (dark inputs, floodlight focus).
+const inputCls =
+  "rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none";
+const eyebrowCls = "font-mono text-[11px] uppercase tracking-widest text-chalk-dim";
+
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
 export default function SessionPage() {
   const { groupId, sessionId } = useParams<{ groupId: string; sessionId: string }>();
   const router = useRouter();
   const { user, accessToken, isLoading } = useAuth();
   const supabase = useSupabase();
+  const { fire: fireCeremony, overlay: ceremonyOverlay } = useVoteCeremony();
 
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [votes, setVotes] = useState<VoteRow[]>([]);
   const [waitlist, setWaitlist] = useState<WaitlistRow[]>([]);
   const [isGroupAdmin, setIsGroupAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [guestCount, setGuestCount] = useState(0);
+  // Raw text, not number — see maxCapacityInput in the new-session page for why.
+  const [guestCountInput, setGuestCountInput] = useState("0");
+  const [guestNames, setGuestNames] = useState<string[]>([]);
   const [voting, setVoting] = useState(false);
   const [error, setError] = useState("");
   const [turfOptions, setTurfOptions] = useState<TurfOption[]>([]);
@@ -81,17 +132,37 @@ export default function SessionPage() {
   const [finalizeChoice, setFinalizeChoice] = useState("");
   const [finalizing, setFinalizing] = useState(false);
   const [groupMemberCount, setGroupMemberCount] = useState(0);
+  const [attendance, setAttendance] = useState<AttendanceRow[]>([]);
+  const [markingAttendance, setMarkingAttendance] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const [costPerHeadInput, setCostPerHeadInput] = useState("");
+  const [groupMembersForCollector, setGroupMembersForCollector] = useState<GroupMemberOption[]>([]);
+  const [settingCollector, setSettingCollector] = useState(false);
+  const [selectedCollector, setSelectedCollector] = useState("");
+  const [collectorInfo, setCollectorInfo] = useState<{ name: string; upi_id: string | null } | null>(null);
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [markingPaid, setMarkingPaid] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [teams, setTeams] = useState<TeamRow[]>([]);
+  const [randomizing, setRandomizing] = useState(false);
+  const [revealing, setRevealing] = useState(false);
+  // Ceremony 4: the row just marked paid on this device gets the yellow wash;
+  // if that mark settles the whole session, a particle tick fires once.
+  const [justPaidId, setJustPaidId] = useState<string | null>(null);
+  const justPaidTimer = useRef<number | null>(null);
 
   const loadData = useCallback(async () => {
-    const [sessionRes, votesRes, waitlistRes, turfsRes, dayOptionsRes] = await Promise.all([
+    const [sessionRes, votesRes, waitlistRes, turfsRes, dayOptionsRes, attendanceRes] = await Promise.all([
       supabase
         .from("sessions")
-        .select("id, group_id, organizer_id, scheduled_at, ends_at, max_capacity, status, turfs(name, address)")
+        .select(
+          "id, group_id, organizer_id, payment_collector_id, scheduled_at, ends_at, max_capacity, status, cost_per_head, turfs(name, address, lat, lng)"
+        )
         .eq("id", sessionId)
         .single(),
       supabase
         .from("session_votes")
-        .select("user_id, voted_in, guest_count, users(name)")
+        .select("user_id, voted_in, guest_count, guest_names, users(name)")
         .eq("session_id", sessionId),
       supabase
         .from("session_waitlist")
@@ -104,12 +175,56 @@ export default function SessionPage() {
         .select("id, scheduled_at, ends_at")
         .eq("session_id", sessionId)
         .order("scheduled_at", { ascending: true }),
+      supabase.from("attendance").select("user_id, attended").eq("session_id", sessionId),
     ]);
 
-    setSession(sessionRes.data as unknown as SessionDetail);
+    const sessionData = sessionRes.data as unknown as SessionDetail | null;
+    setSession(sessionData);
     setVotes((votesRes.data ?? []) as unknown as VoteRow[]);
     setWaitlist((waitlistRes.data ?? []) as unknown as WaitlistRow[]);
     setTurfOptions(turfsRes.data ?? []);
+    setAttendance(attendanceRes.data ?? []);
+    setCostPerHeadInput(sessionData?.cost_per_head != null ? String(sessionData.cost_per_head) : "");
+
+    const { data: memberOptions } = await supabase
+      .from("group_members")
+      .select("user_id, users(name)")
+      .eq("group_id", groupId);
+    setGroupMembersForCollector((memberOptions ?? []) as unknown as GroupMemberOption[]);
+
+    if (sessionData) {
+      const collectorId = sessionData.payment_collector_id ?? sessionData.organizer_id;
+      if (collectorId) {
+        const { data: collectorRow } = await supabase
+          .from("users")
+          .select("name, upi_id")
+          .eq("id", collectorId)
+          .maybeSingle();
+        setCollectorInfo(collectorRow ?? null);
+      } else {
+        setCollectorInfo(null);
+      }
+
+      if (sessionData.status === "completed") {
+        const { data: paymentRows } = await supabase
+          .from("payments")
+          .select("id, payer_id, amount, status, payer:users!payments_payer_id_fkey(name)")
+          .eq("session_id", sessionId);
+        setPayments((paymentRows ?? []) as unknown as PaymentRow[]);
+      } else {
+        setPayments([]);
+      }
+
+      if (sessionData.status === "locked" || sessionData.status === "completed") {
+        const { data: teamRows } = await supabase
+          .from("session_captains")
+          .select("user_id, team, users(name)")
+          .eq("session_id", sessionId);
+        setTeams((teamRows ?? []) as unknown as TeamRow[]);
+      } else {
+        setTeams([]);
+      }
+    }
 
     const options = dayOptionsRes.data ?? [];
     setDayOptions(options);
@@ -155,11 +270,40 @@ export default function SessionPage() {
     loadData();
   }, [user, loadData]);
 
+  useEffect(() => {
+    if (!user || !session || session.status !== "completed" || !collectorInfo?.upi_id) {
+      setQrDataUrl("");
+      return;
+    }
+    const myPayment = payments.find((p) => p.payer_id === user.id);
+    const link = buildUpiLink(collectorInfo.upi_id, collectorInfo.name, myPayment?.amount ?? null, "GameDay session");
+    generateUpiQr(link)
+      .then(setQrDataUrl)
+      .catch(() => setQrDataUrl(""));
+  }, [user, session, payments, collectorInfo]);
+
+  // Ceremony 4 finale: when a mark-paid on this device settles the last row,
+  // the collection bar hits 100% and gets a particle tick.
+  useEffect(() => {
+    const paid = payments.filter((p) => p.status === "paid").length;
+    const settled = payments.length > 0 && paid === payments.length;
+    if (settled && justPaidId) {
+      confetti({
+        particleCount: 24,
+        spread: 70,
+        startVelocity: 20,
+        origin: { x: 0.5, y: 0.35 },
+        colors: ["#E8FF47", "#F2F5EF"],
+        disableForReducedMotion: true,
+      });
+    }
+  }, [payments, justPaidId]);
+
   if (isLoading || !user || loading) return null;
   if (!session) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-        <p className="text-sm text-gray-500">Session not found.</p>
+      <main className="min-h-screen flex items-center justify-center bg-night px-4">
+        <p className={eyebrowCls}>Session not found.</p>
       </main>
     );
   }
@@ -181,10 +325,45 @@ export default function SessionPage() {
 
   const leadingOptionId = dayTallies[0]?.id;
   const finalizeSelection = finalizeChoice || leadingOptionId || "";
+  const guestCountNum = Number(guestCountInput) || 0;
+  const myPayment = payments.find((p) => p.payer_id === user.id);
+  const isCollector = (session.payment_collector_id ?? session.organizer_id) === user.id;
 
-  async function castVote(votedIn: boolean) {
+  // Collection progress (Ceremony 4). PostgREST returns numeric as string, so
+  // coerce; if any amount is unset, fall back to counting rows.
+  const fmtAmt = (a: number | null) => (a != null ? Number(a).toLocaleString("en-IN") : "—");
+  const amountsKnown = payments.length > 0 && payments.every((p) => p.amount != null);
+  const totalAmount = amountsKnown ? payments.reduce((s, p) => s + Number(p.amount), 0) : 0;
+  const collectedAmount = amountsKnown
+    ? payments.filter((p) => p.status === "paid").reduce((s, p) => s + Number(p.amount), 0)
+    : 0;
+  const paidCount = payments.filter((p) => p.status === "paid").length;
+  const collectPct =
+    payments.length === 0
+      ? 0
+      : amountsKnown && totalAmount > 0
+      ? Math.round((collectedAmount / totalAmount) * 100)
+      : Math.round((paidCount / payments.length) * 100);
+  const allSettled = payments.length > 0 && paidCount === payments.length;
+  const myGuestCount = myVote?.guest_count ?? 0;
+
+  function updateGuestName(index: number, value: string) {
+    setGuestNames((prev) => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+  }
+
+  async function castVote(votedIn: boolean, ev?: React.MouseEvent) {
     setError("");
     setVoting(true);
+    // Ceremony 1: fire the sweep + burst from the tap point the moment a
+    // not-yet-confirmed member votes in (optimistic — failure is rare and
+    // still surfaces the error below).
+    if (votedIn && myStatus !== "confirmed" && ev) {
+      fireCeremony(ev.clientX, ev.clientY);
+    }
     try {
       const res = await fetch(`/api/sessions/${sessionId}/vote`, {
         method: "POST",
@@ -192,7 +371,13 @@ export default function SessionPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ voted_in: votedIn, guest_count: votedIn ? guestCount : 0 }),
+        body: JSON.stringify({
+          voted_in: votedIn,
+          guest_count: votedIn ? guestCountNum : 0,
+          guest_names: votedIn
+            ? guestNames.slice(0, guestCountNum).map((n) => n.trim()).filter(Boolean)
+            : [],
+        }),
       });
       if (!res.ok) {
         const { error: msg } = await res.json();
@@ -253,16 +438,133 @@ export default function SessionPage() {
     if (!updateError) await loadData();
   }
 
+  async function toggleAttendance(userId: string, attended: boolean) {
+    setMarkingAttendance(true);
+    await supabase
+      .from("attendance")
+      .upsert(
+        { session_id: sessionId, user_id: userId, attended, marked_by: user!.id },
+        { onConflict: "session_id,user_id" }
+      );
+    await loadData();
+    setMarkingAttendance(false);
+  }
+
+  async function handleMarkComplete() {
+    setCompleting(true);
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/complete`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) {
+        const { error: msg } = await res.json();
+        throw new Error(msg);
+      }
+      await loadData();
+    } catch (err: any) {
+      setError(err.message ?? "Failed to complete session");
+    } finally {
+      setCompleting(false);
+    }
+  }
+
+  async function handleSetCostPerHead() {
+    const value = costPerHeadInput.trim() === "" ? null : Number(costPerHeadInput);
+    const { error: updateError } = await supabase
+      .from("sessions")
+      .update({ cost_per_head: value })
+      .eq("id", sessionId);
+    if (!updateError) await loadData();
+  }
+
+  async function handleSetCollector() {
+    if (!selectedCollector) return;
+    const { error: updateError } = await supabase
+      .from("sessions")
+      .update({ payment_collector_id: selectedCollector })
+      .eq("id", sessionId);
+    if (!updateError) {
+      setSettingCollector(false);
+      await loadData();
+    }
+  }
+
+  async function togglePaymentStatus(paymentId: string, newStatus: string) {
+    setMarkingPaid(true);
+    if (newStatus === "paid") {
+      if (justPaidTimer.current) clearTimeout(justPaidTimer.current);
+      setJustPaidId(paymentId);
+      justPaidTimer.current = window.setTimeout(() => setJustPaidId(null), 1400);
+    }
+    await supabase
+      .from("payments")
+      .update({ status: newStatus, marked_at: new Date().toISOString() })
+      .eq("id", paymentId);
+    await loadData();
+    setMarkingPaid(false);
+  }
+
+  async function handleRandomizeTeams() {
+    setError("");
+    setRandomizing(true);
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/teams/randomize`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) {
+        const { error: msg } = await res.json();
+        throw new Error(msg);
+      }
+      await loadData();
+      setRevealing(true);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to randomize teams");
+    } finally {
+      setRandomizing(false);
+    }
+  }
+
+  const statusLabel = isDayPoll
+    ? "Day poll live"
+    : session.status === "open"
+    ? "Poll open"
+    : session.status === "locked"
+    ? "Squads forming"
+    : "Completed";
+
   return (
-    <main className="min-h-screen bg-gray-50 p-8">
+    <main className="min-h-screen bg-night p-6">
+      {ceremonyOverlay}
+      <AnimatePresence>
+        {revealing && teams.length > 0 && (
+          <SquadRevealOverlay
+            teamA={teams.filter((t) => t.team === "A").map((t) => t.users?.name ?? "?")}
+            teamB={teams.filter((t) => t.team === "B").map((t) => t.users?.name ?? "?")}
+            onClose={() => setRevealing(false)}
+          />
+        )}
+      </AnimatePresence>
       <div className="mx-auto max-w-md space-y-6">
         <div>
-          <Link href={`/groups/${groupId}`} className="text-sm text-gray-500 hover:text-gray-700">
+          <Link
+            href={`/groups/${groupId}`}
+            className="font-mono text-[11px] uppercase tracking-widest text-chalk-dim hover:text-chalk"
+          >
             ← Back
           </Link>
-          <h1 className="mt-1 text-2xl font-bold text-gray-900">
+
+          <div className="mt-3 flex items-center gap-2">
+            {(session.status === "open" || isDayPoll) && (
+              <span className="h-2 w-2 animate-pulse rounded-full bg-floodlight" />
+            )}
+            <p className={eyebrowCls}>{statusLabel}</p>
+          </div>
+
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-chalk">
             {isDayPoll || !session.scheduled_at
-              ? "🗳️ Which day works?"
+              ? "Which day works?"
               : new Date(session.scheduled_at).toLocaleDateString(undefined, {
                   weekday: "long",
                   month: "short",
@@ -270,17 +572,32 @@ export default function SessionPage() {
                 })}
           </h1>
           {!isDayPoll && session.scheduled_at && (
-            <p className="text-sm font-medium text-gray-600">
+            <p className="mt-0.5 font-mono text-xs uppercase tracking-wider text-chalk-dim">
               {formatTimeRange(session.scheduled_at, session.ends_at)}
             </p>
           )}
           {session.turfs ? (
-            <p className="text-sm text-gray-500">
+            <p className="mt-1 text-sm text-chalk-dim">
               {session.turfs.name}
               {session.turfs.address ? ` · ${session.turfs.address}` : ""}
+              {session.turfs.lat != null && session.turfs.lng != null && (
+                <>
+                  {" · "}
+                  <a
+                    href={`https://www.google.com/maps?q=${session.turfs.lat},${session.turfs.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-floodlight hover:opacity-80"
+                  >
+                    📍 Map
+                  </a>
+                </>
+              )}
             </p>
           ) : (
-            <p className="text-sm text-gray-400">Turf: not yet decided</p>
+            <p className="mt-1 font-mono text-xs uppercase tracking-wider text-chalk-dim">
+              Turf: not yet decided
+            </p>
           )}
 
           {!session.turfs && canManage && (
@@ -289,7 +606,7 @@ export default function SessionPage() {
                 <button
                   type="button"
                   onClick={() => setSettingTurf(true)}
-                  className="text-xs font-medium text-green-600 hover:text-green-700"
+                  className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
                 >
                   + Set turf
                 </button>
@@ -298,7 +615,7 @@ export default function SessionPage() {
                   <select
                     value={selectedTurf}
                     onChange={(e) => setSelectedTurf(e.target.value)}
-                    className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                    className={inputCls}
                   >
                     <option value="">Pick a turf</option>
                     {turfOptions.map((t) => (
@@ -307,18 +624,18 @@ export default function SessionPage() {
                       </option>
                     ))}
                   </select>
-                  <button
-                    type="button"
+                  <NeoPopButton
+                    variant="secondary"
+                    size="sm"
                     onClick={handleSetTurf}
                     disabled={!selectedTurf}
-                    className="rounded-lg bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
                   >
                     Save
-                  </button>
+                  </NeoPopButton>
                   <button
                     type="button"
                     onClick={() => setSettingTurf(false)}
-                    className="text-xs text-gray-500 hover:text-gray-700"
+                    className="font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
                   >
                     Cancel
                   </button>
@@ -327,29 +644,30 @@ export default function SessionPage() {
             </div>
           )}
 
-          <p className="mt-1 text-xs text-gray-400">
-            {isDayPoll
-              ? dayOptions[0]
+          {isDayPoll && (
+            <p className="mt-2 font-mono text-xs uppercase tracking-wider text-chalk-dim">
+              {dayOptions[0]
                 ? `Vote for every day that works · ${formatTimeRange(dayOptions[0].scheduled_at, dayOptions[0].ends_at)}`
-                : "Vote for every day that works"
-              : session.status === "open"
-              ? "Voting open"
-              : `Voting ${session.status}`}
-          </p>
+                : "Vote for every day that works"}
+            </p>
+          )}
         </div>
 
         {isDayPoll && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {dayTallies.map((opt) => {
               const iVoted = opt.voterIds.includes(user.id);
               const pct = groupMemberCount > 0 ? (opt.voterIds.length / groupMemberCount) * 100 : 0;
+              const isLeading = opt.id === leadingOptionId && opt.voterIds.length > 0;
               return (
                 <div
                   key={opt.id}
-                  className="rounded-lg border border-gray-200 bg-white p-4 space-y-2"
+                  className={`rounded-xl border bg-turf p-4 space-y-3 ${
+                    isLeading ? "border-floodlight/60" : "border-line"
+                  }`}
                 >
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-900">
+                    <p className="text-base font-semibold text-chalk">
                       {new Date(opt.scheduled_at).toLocaleDateString(undefined, {
                         weekday: "short",
                         month: "short",
@@ -359,22 +677,22 @@ export default function SessionPage() {
                     <button
                       onClick={() => toggleDayVote(opt.id, iVoted)}
                       disabled={dayVoting}
-                      className={`rounded-full px-3 py-1 text-xs font-semibold disabled:opacity-50 ${
+                      className={`rounded-full px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider transition-colors disabled:opacity-50 ${
                         iVoted
-                          ? "bg-green-600 text-white"
-                          : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+                          ? "bg-floodlight font-semibold text-night"
+                          : "border border-line text-chalk-dim hover:border-chalk-dim hover:text-chalk"
                       }`}
                     >
                       {iVoted ? "I can make it ✓" : "I can make it"}
                     </button>
                   </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-night">
                     <div
-                      className="h-full bg-green-500"
+                      className="h-full rounded-full bg-floodlight transition-all duration-500"
                       style={{ width: `${Math.min(100, pct)}%` }}
                     />
                   </div>
-                  <p className="text-xs text-gray-400">
+                  <p className="font-mono text-[11px] uppercase tracking-wider text-chalk-dim">
                     {opt.voterIds.length} of {groupMemberCount} can make it
                   </p>
                 </div>
@@ -382,12 +700,12 @@ export default function SessionPage() {
             })}
 
             {canManage && (
-              <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
-                <p className="text-sm font-medium text-gray-700">Finalize the day</p>
+              <div className="rounded-xl border border-line bg-turf p-4 space-y-3">
+                <p className={eyebrowCls}>Finalize the day</p>
                 <select
                   value={finalizeSelection}
                   onChange={(e) => setFinalizeChoice(e.target.value)}
-                  className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                  className={`block w-full ${inputCls}`}
                 >
                   {dayTallies.map((opt) => (
                     <option key={opt.id} value={opt.id}>
@@ -401,26 +719,35 @@ export default function SessionPage() {
                     </option>
                   ))}
                 </select>
-                <button
-                  onClick={handleFinalizeDay}
-                  disabled={finalizing}
-                  className="w-full rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
-                >
-                  {finalizing ? "Locking in…" : "Lock in this day"}
-                </button>
+                <NeoPopButton className="w-full" onClick={handleFinalizeDay} disabled={finalizing}>
+                  {finalizing ? "LOCKING IN…" : "LOCK IN THIS DAY"}
+                </NeoPopButton>
               </div>
             )}
           </div>
         )}
 
         {!isDayPoll && (
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <p className="text-sm font-medium text-gray-700">
-              {headcount} / {session.max_capacity} confirmed
-            </p>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+          <div className="rounded-2xl border border-line bg-turf p-5">
+            <p className={eyebrowCls}>Confirmed</p>
+            <div className="relative mt-1 inline-block">
+              <motion.span
+                key={headcount}
+                initial={{ opacity: 0.9 }}
+                animate={{ opacity: 0 }}
+                transition={{ duration: 0.7 }}
+                className="pointer-events-none absolute -inset-3 rounded-full bg-floodlight/15 blur-xl"
+              />
+              <p className="relative text-6xl font-bold tracking-tighter text-chalk">
+                <CountUp value={headcount} />
+                <span className="text-2xl font-semibold text-chalk-dim">
+                  /{session.max_capacity}
+                </span>
+              </p>
+            </div>
+            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-night">
               <div
-                className="h-full bg-green-500"
+                className="h-full rounded-full bg-floodlight transition-all duration-500"
                 style={{ width: `${Math.min(100, (headcount / session.max_capacity) * 100)}%` }}
               />
             </div>
@@ -428,69 +755,112 @@ export default function SessionPage() {
         )}
 
         {!isDayPoll && session.status === "open" && (
-          <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
-            <p className="text-sm font-medium text-gray-700">
+          <div className="rounded-2xl border border-line bg-turf p-5 space-y-4">
+            <p className="text-sm text-chalk-dim">
               Your status:{" "}
               <span
-                className={
+                className={`font-semibold ${
                   myStatus === "confirmed"
-                    ? "text-green-600"
+                    ? "text-floodlight"
                     : myStatus === "waitlisted"
-                    ? "text-amber-600"
-                    : "text-gray-400"
-                }
+                    ? "text-chalk"
+                    : "text-chalk-dim"
+                }`}
               >
                 {myStatus === "confirmed" ? "In ✓" : myStatus === "waitlisted" ? "Waitlisted" : "Not in"}
               </span>
             </p>
 
-            <div className="flex items-center gap-2">
-              <label htmlFor="guests" className="text-sm text-gray-600">
+            <div className="flex items-center gap-3">
+              <label htmlFor="guests" className={eyebrowCls}>
                 Guests
               </label>
               <input
                 id="guests"
                 type="number"
                 min={0}
-                value={guestCount}
-                onChange={(e) => setGuestCount(Math.max(0, Number(e.target.value)))}
-                className="w-16 rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                value={guestCountInput}
+                onChange={(e) => setGuestCountInput(e.target.value)}
+                onBlur={() => {
+                  if (guestCountInput.trim() === "") setGuestCountInput("0");
+                }}
+                className={`w-16 ${inputCls}`}
               />
             </div>
 
-            <div className="flex gap-2">
-              <button
-                onClick={() => castVote(true)}
+            {guestCountNum > 0 && (
+              <div className="space-y-2">
+                {Array.from({ length: guestCountNum }).map((_, i) => (
+                  <input
+                    key={i}
+                    type="text"
+                    placeholder={`Guest ${i + 1} name`}
+                    value={guestNames[i] ?? ""}
+                    onChange={(e) => updateGuestName(i, e.target.value)}
+                    className={`block w-full ${inputCls}`}
+                  />
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <NeoPopButton
+                className="flex-1"
+                onClick={(e) => castVote(true, e)}
                 disabled={voting}
-                className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
               >
-                I&apos;m in
-              </button>
-              <button
+                {myStatus === "confirmed" ? "YOU'RE IN ✓" : "I'M IN"}
+              </NeoPopButton>
+              <NeoPopButton
+                variant="secondary"
+                className="flex-1"
                 onClick={() => castVote(false)}
                 disabled={voting}
-                className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
-                I&apos;m out
-              </button>
+                I'M OUT
+              </NeoPopButton>
             </div>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-card-red">{error}</p>}
           </div>
         )}
 
         {!isDayPoll && (
           <div className="space-y-2">
-            <h2 className="text-sm font-semibold text-gray-700">Confirmed ({confirmed.length})</h2>
+            <p className={eyebrowCls}>Confirmed · {confirmed.length}</p>
             {confirmed.length === 0 ? (
-              <p className="text-sm text-gray-400">No one yet.</p>
+              <p className="font-mono text-xs uppercase tracking-wider text-chalk-dim/70">
+                No one yet.
+              </p>
             ) : (
-              <ul className="space-y-1">
-                {confirmed.map((v) => (
-                  <li key={v.user_id} className="text-sm text-gray-700">
-                    {v.users?.name} {v.guest_count > 0 ? `+${v.guest_count}` : ""}
-                  </li>
-                ))}
+              <ul className="space-y-2">
+                <AnimatePresence initial={false}>
+                  {confirmed.map((v) => (
+                    <motion.li
+                      key={v.user_id}
+                      layout
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 28 }}
+                      className="flex items-center gap-3 rounded-lg border border-line bg-turf px-3 py-2.5"
+                    >
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-turf-raised text-[11px] font-semibold text-chalk">
+                        {initials(v.users?.name ?? "?")}
+                      </span>
+                      <span className="text-sm text-chalk">{v.users?.name}</span>
+                      {v.guest_count > 0 && (
+                        <span
+                          className="ml-auto font-mono text-[11px] text-chalk-dim"
+                          title={v.guest_names.join(", ")}
+                        >
+                          +{v.guest_count}
+                          {v.guest_names.length > 0 ? ` · ${v.guest_names.join(", ")}` : ""}
+                        </span>
+                      )}
+                    </motion.li>
+                  ))}
+                </AnimatePresence>
               </ul>
             )}
           </div>
@@ -498,24 +868,360 @@ export default function SessionPage() {
 
         {!isDayPoll && waitlist.length > 0 && (
           <div className="space-y-2">
-            <h2 className="text-sm font-semibold text-gray-700">Waitlist</h2>
-            <ul className="space-y-1">
+            <p className={eyebrowCls}>Waitlist · {waitlist.length}</p>
+            <ul className="space-y-1.5">
               {waitlist.map((w, i) => (
-                <li key={w.user_id} className="text-sm text-gray-500">
-                  {i + 1}. {w.users?.name}
+                <li
+                  key={w.user_id}
+                  className="flex items-center gap-3 rounded-lg border border-line/50 px-3 py-2 opacity-60"
+                >
+                  <span className="font-mono text-[11px] text-chalk-dim">{i + 1}</span>
+                  <span className="text-sm text-chalk-dim">{w.users?.name}</span>
                 </li>
               ))}
             </ul>
           </div>
         )}
 
+        {!isDayPoll && session.status !== "open" && (
+          <div className="space-y-2">
+            <p className={eyebrowCls}>Attendance</p>
+            {confirmed.length === 0 ? (
+              <p className="font-mono text-xs uppercase tracking-wider text-chalk-dim/70">
+                No one was confirmed for this session.
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {confirmed.map((v) => {
+                  const record = attendance.find((a) => a.user_id === v.user_id);
+                  const attended = record?.attended ?? false;
+                  return (
+                    <li
+                      key={v.user_id}
+                      className="flex items-center justify-between rounded-lg border border-line bg-turf px-3 py-2"
+                    >
+                      <span className="text-sm text-chalk">{v.users?.name}</span>
+                      {canManage ? (
+                        <button
+                          onClick={() => toggleAttendance(v.user_id, !attended)}
+                          disabled={markingAttendance}
+                          className={`rounded-full px-3 py-1 font-mono text-[11px] uppercase tracking-wider transition-colors disabled:opacity-50 ${
+                            attended
+                              ? "bg-floodlight font-semibold text-night"
+                              : "border border-line text-chalk-dim hover:border-chalk-dim hover:text-chalk"
+                          }`}
+                        >
+                          {attended ? "Attended ✓" : "No show"}
+                        </button>
+                      ) : (
+                        <span
+                          className={`font-mono text-[11px] uppercase tracking-wider ${
+                            attended ? "text-floodlight" : "text-chalk-dim"
+                          }`}
+                        >
+                          {record ? (attended ? "Attended ✓" : "No show") : "Not marked"}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {!isDayPoll && (session.status === "locked" || session.status === "completed") && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className={eyebrowCls}>Squad</p>
+              {canManage && teams.length > 0 && (
+                <button
+                  onClick={handleRandomizeTeams}
+                  disabled={randomizing}
+                  className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk disabled:opacity-50"
+                >
+                  {randomizing ? "Randomizing…" : "Re-randomize"}
+                </button>
+              )}
+            </div>
+
+            {teams.length === 0 ? (
+              canManage ? (
+                <NeoPopButton
+                  className="w-full"
+                  onClick={handleRandomizeTeams}
+                  disabled={randomizing}
+                >
+                  {randomizing ? "FORMING…" : "FORM TEAMS"}
+                </NeoPopButton>
+              ) : (
+                <p className="font-mono text-xs uppercase tracking-wider text-chalk-dim/70">
+                  Teams haven&apos;t been formed yet.
+                </p>
+              )
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {(["A", "B"] as const).map((teamKey) => (
+                  <div key={teamKey} className="rounded-xl border border-line bg-turf p-3">
+                    <p className={eyebrowCls}>Team {teamKey}</p>
+                    <ul className="mt-2 space-y-1.5">
+                      {teams
+                        .filter((t) => t.team === teamKey)
+                        .map((t) => (
+                          <li key={t.user_id} className="text-sm text-chalk">
+                            {t.users?.name}
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!isDayPoll && canManage && session.status === "locked" && (
+          <div className="rounded-xl border border-line bg-turf p-4 space-y-4">
+            <p className={eyebrowCls}>Payment setup</p>
+
+            <div>
+              <label htmlFor="costPerHead" className="block font-mono text-[11px] uppercase tracking-wider text-chalk-dim">
+                Cost per head (₹)
+              </label>
+              <div className="mt-1.5 flex gap-2">
+                <input
+                  id="costPerHead"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  placeholder="e.g. 150"
+                  value={costPerHeadInput}
+                  onChange={(e) => setCostPerHeadInput(e.target.value)}
+                  className={`flex-1 ${inputCls}`}
+                />
+                <NeoPopButton variant="secondary" size="sm" onClick={handleSetCostPerHead}>
+                  Save
+                </NeoPopButton>
+              </div>
+            </div>
+
+            <div>
+              <p className="font-mono text-[11px] uppercase tracking-wider text-chalk-dim">
+                Collector: <span className="text-chalk">{collectorInfo?.name ?? "Not set"}</span>
+                {session.payment_collector_id ? "" : " (organizer, default)"}
+              </p>
+              {!settingCollector ? (
+                <button
+                  type="button"
+                  onClick={() => setSettingCollector(true)}
+                  className="mt-1.5 font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
+                >
+                  Reassign collector
+                </button>
+              ) : (
+                <div className="mt-1.5 flex items-center gap-2">
+                  <select
+                    value={selectedCollector}
+                    onChange={(e) => setSelectedCollector(e.target.value)}
+                    className={`flex-1 ${inputCls}`}
+                  >
+                    <option value="">Pick a member</option>
+                    {groupMembersForCollector.map((m) => (
+                      <option key={m.user_id} value={m.user_id}>
+                        {m.users?.name}
+                      </option>
+                    ))}
+                  </select>
+                  <NeoPopButton
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleSetCollector}
+                    disabled={!selectedCollector}
+                  >
+                    Save
+                  </NeoPopButton>
+                  <button
+                    onClick={() => setSettingCollector(false)}
+                    className="font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!isDayPoll && session.status === "completed" && (
+          <div className="space-y-3">
+            <p className={eyebrowCls}>Payments</p>
+
+            {payments.length > 0 && (
+              <div className="rounded-xl border border-line bg-turf p-4 space-y-2">
+                {allSettled ? (
+                  <p className="font-mono text-xs uppercase tracking-wider text-floodlight">
+                    All settled{amountsKnown ? ` — ₹${fmtAmt(totalAmount)} / ₹${fmtAmt(totalAmount)}` : ""} ✓
+                  </p>
+                ) : (
+                  <p className="font-mono text-[11px] uppercase tracking-widest text-chalk-dim">
+                    Collected{" "}
+                    <span className="text-chalk">
+                      {amountsKnown
+                        ? `₹${fmtAmt(collectedAmount)} / ₹${fmtAmt(totalAmount)}`
+                        : `${paidCount} / ${payments.length}`}
+                    </span>
+                  </p>
+                )}
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-night">
+                  <div
+                    className="h-full rounded-full bg-floodlight transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
+                    style={{ width: `${Math.min(100, collectPct)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-xl border border-line bg-turf p-4 space-y-3">
+              <p className="text-sm text-chalk-dim">
+                Collector: <span className="font-semibold text-chalk">{collectorInfo?.name ?? "Not set"}</span>
+              </p>
+              {myPayment && (
+                <div>
+                  <p className={eyebrowCls}>{myPayment.status === "paid" ? "You paid" : "You owe"}</p>
+                  <p
+                    className={`text-5xl font-bold tracking-tighter ${
+                      myPayment.status === "paid" ? "text-chalk-dim" : "text-chalk"
+                    }`}
+                  >
+                    {myPayment.amount != null ? `₹${fmtAmt(myPayment.amount)}` : "—"}
+                  </p>
+                  {session.cost_per_head != null && myGuestCount > 0 && (
+                    <p className="mt-0.5 font-mono text-[11px] uppercase tracking-wider text-chalk-dim">
+                      ₹{fmtAmt(session.cost_per_head)} + {myGuestCount} guest{myGuestCount > 1 ? "s" : ""}
+                    </p>
+                  )}
+                  {myPayment.status === "paid" && (
+                    <p className="mt-0.5 font-mono text-[11px] uppercase tracking-wider text-floodlight">
+                      Settled ✓
+                    </p>
+                  )}
+                </div>
+              )}
+              {!isCollector && collectorInfo?.upi_id && myPayment && myPayment.status !== "paid" && (
+                <div className="space-y-3">
+                  {qrDataUrl && (
+                    <div className="mx-auto w-fit rounded-xl bg-chalk p-3 shadow-[0_0_24px_rgba(232,255,71,0.15)]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={qrDataUrl} alt="UPI payment QR code" className="h-40 w-40" />
+                    </div>
+                  )}
+                  <a
+                    href={buildUpiLink(collectorInfo.upi_id, collectorInfo.name, myPayment.amount, "GameDay session")}
+                    className="block"
+                  >
+                    <NeoPopButton className="w-full">PAY WITH UPI APP</NeoPopButton>
+                  </a>
+                </div>
+              )}
+              {collectorInfo && !collectorInfo.upi_id && isCollector && (
+                <p className="font-mono text-[11px] uppercase tracking-wider text-floodlight/80">
+                  Add your UPI ID on your profile so members can pay you directly.
+                </p>
+              )}
+            </div>
+
+            <ul className="space-y-1.5">
+              {payments.map((p) => {
+                const paid = p.status === "paid";
+                return (
+                  <li
+                    key={p.id}
+                    className={`relative flex items-center justify-between overflow-hidden rounded-lg border px-3 py-2 ${
+                      paid
+                        ? "border-floodlight/10 bg-[rgba(232,255,71,0.05)]"
+                        : "border-line bg-turf"
+                    }`}
+                  >
+                    {justPaidId === p.id && (
+                      <motion.span
+                        initial={{ opacity: 0.45 }}
+                        animate={{ opacity: 0 }}
+                        transition={{ duration: 0.9 }}
+                        className="pointer-events-none absolute inset-0 bg-floodlight"
+                      />
+                    )}
+                    <span className={`relative text-sm ${paid ? "text-chalk-dim" : "text-chalk"}`}>
+                      <span className="relative inline-block">
+                        {p.payer?.name} {p.amount != null ? `· ₹${fmtAmt(p.amount)}` : ""}
+                        {paid && (
+                          <motion.span
+                            key={`${p.id}-strike`}
+                            initial={{ scaleX: 0 }}
+                            animate={{ scaleX: 1 }}
+                            transition={{ duration: 0.3, ease: "easeOut" }}
+                            className="absolute left-0 top-1/2 h-px w-full origin-left bg-chalk-dim"
+                          />
+                        )}
+                      </span>
+                    </span>
+                    {paid ? (
+                      p.payer_id === user.id || isCollector ? (
+                        <button
+                          onClick={() => togglePaymentStatus(p.id, "pending")}
+                          disabled={markingPaid}
+                          className="relative rounded-full bg-floodlight px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-night disabled:opacity-50"
+                        >
+                          Paid ✓
+                        </button>
+                      ) : (
+                        <span className="relative font-mono text-[11px] uppercase tracking-wider text-floodlight">
+                          Paid ✓
+                        </span>
+                      )
+                    ) : p.payer_id === user.id ? (
+                      <HoldToConfirm
+                        onConfirm={() => togglePaymentStatus(p.id, "paid")}
+                        disabled={markingPaid}
+                      >
+                        Hold to mark paid
+                      </HoldToConfirm>
+                    ) : isCollector ? (
+                      <button
+                        onClick={() => togglePaymentStatus(p.id, "paid")}
+                        disabled={markingPaid}
+                        className="relative rounded-full border border-line px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-chalk-dim transition-colors hover:border-chalk-dim hover:text-chalk disabled:opacity-50"
+                      >
+                        Mark as Paid
+                      </button>
+                    ) : (
+                      <span className="relative font-mono text-[11px] uppercase tracking-wider text-chalk-dim">
+                        Pending
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
         {!isDayPoll && canManage && session.status === "open" && (
-          <button
-            onClick={handleClosePoll}
-            className="w-full rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+          <NeoPopButton variant="danger" className="w-full" onClick={handleClosePoll}>
+            CLOSE POLL
+          </NeoPopButton>
+        )}
+
+        {!isDayPoll && canManage && session.status === "locked" && (
+          // One floodlight action per screen: while FORM TEAMS is the yellow
+          // CTA (teams not yet formed), completing demotes to secondary.
+          <NeoPopButton
+            variant={teams.length === 0 ? "secondary" : "primary"}
+            className="w-full"
+            onClick={handleMarkComplete}
+            disabled={completing}
           >
-            Close poll
-          </button>
+            {completing ? "COMPLETING…" : "MARK SESSION COMPLETE"}
+          </NeoPopButton>
         )}
       </div>
     </main>

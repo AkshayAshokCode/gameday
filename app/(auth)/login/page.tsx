@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   RecaptchaVerifier,
@@ -14,6 +14,15 @@ export default function LoginPage() {
   const [phone, setPhone] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+
+  // Middleware redirects here with ?next=<original path> when a logged-out
+  // user clicks a direct link (e.g. a session shared in WhatsApp). Stash it
+  // the same way the invite page does, so verify can send them back instead
+  // of dropping them on the home page.
+  useEffect(() => {
+    const next = new URLSearchParams(window.location.search).get("next");
+    if (next) sessionStorage.setItem("post_login_redirect", next);
+  }, []);
 
   async function handleSendOTP(e: React.FormEvent) {
     e.preventDefault();

@@ -1,9 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth, useSupabase } from "@/lib/auth-context";
+import { NeoPopButton } from "@/components/NeoPopButton";
 import type { Database } from "@/lib/supabase/types";
+
+// Leaflet touches window/document directly, so it can't run during SSR.
+const TurfLocationPicker = dynamic(() => import("@/components/TurfLocationPicker"), { ssr: false });
 
 type Turf = Database["public"]["Tables"]["turfs"]["Row"];
 
@@ -53,7 +58,7 @@ function TimeRangeSelect({
         required
         value={start}
         onChange={(e) => handleStartChange(e.target.value)}
-        className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+        className="flex-1 rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
       >
         <option value="">Start</option>
         {TIME_SLOTS.map((slot) => (
@@ -62,13 +67,13 @@ function TimeRangeSelect({
           </option>
         ))}
       </select>
-      <span className="text-xs text-gray-400">to</span>
+      <span className="font-mono text-xs text-chalk-dim">to</span>
       <select
         required
         disabled={!start}
         value={end}
         onChange={(e) => onEndChange(e.target.value)}
-        className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 disabled:opacity-50"
+        className="flex-1 rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none disabled:opacity-50"
       >
         <option value="">End</option>
         {endOptions.map((slot) => (
@@ -92,6 +97,8 @@ export default function NewSessionPage() {
   const [addingTurf, setAddingTurf] = useState(false);
   const [newTurfName, setNewTurfName] = useState("");
   const [newTurfAddress, setNewTurfAddress] = useState("");
+  const [newTurfLat, setNewTurfLat] = useState<number | null>(null);
+  const [newTurfLng, setNewTurfLng] = useState<number | null>(null);
 
   const [dateMode, setDateMode] = useState<"single" | "poll">("single");
   const [singleDate, setSingleDate] = useState("");
@@ -100,7 +107,10 @@ export default function NewSessionPage() {
   const [dayOptions, setDayOptions] = useState(["", ""]);
   const [pollStart, setPollStart] = useState("");
   const [pollEnd, setPollEnd] = useState("");
-  const [maxCapacity, setMaxCapacity] = useState(20);
+  // Kept as raw text (not number) so the field can go fully empty while the
+  // user is backspacing — coercing to Number on every keystroke would force
+  // a "0" back in immediately and block clearing it.
+  const [maxCapacityInput, setMaxCapacityInput] = useState("20");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -123,7 +133,9 @@ export default function NewSessionPage() {
       .insert({
         name: newTurfName.trim(),
         address: newTurfAddress.trim() || null,
-        default_capacity: maxCapacity,
+        lat: newTurfLat,
+        lng: newTurfLng,
+        default_capacity: Number(maxCapacityInput) || 0,
         added_by: user?.id,
       })
       .select()
@@ -139,6 +151,8 @@ export default function NewSessionPage() {
     setAddingTurf(false);
     setNewTurfName("");
     setNewTurfAddress("");
+    setNewTurfLat(null);
+    setNewTurfLng(null);
   }
 
   function updateDayOption(index: number, value: string) {
@@ -176,7 +190,7 @@ export default function NewSessionPage() {
             dateMode === "single" ? new Date(`${singleDate}T${singleStart}`).toISOString() : null,
           ends_at:
             dateMode === "single" ? new Date(`${singleDate}T${singleEnd}`).toISOString() : null,
-          max_capacity: maxCapacity,
+          max_capacity: Number(maxCapacityInput) || 0,
           status: dateMode === "poll" ? "proposing" : "open",
         })
         .select()
@@ -204,24 +218,24 @@ export default function NewSessionPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-8">
+    <main className="min-h-screen flex items-center justify-center bg-night px-4 py-8">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900">New session</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="text-2xl font-bold tracking-tight text-chalk">New session</h1>
+          <p className="mt-1 text-sm text-chalk-dim">
             Pick a date and capacity — turf can be decided later.
           </p>
         </div>
 
         <form onSubmit={handleCreateSession} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Turf</label>
+            <label className="block font-mono text-[11px] uppercase tracking-widest text-chalk-dim">Turf</label>
 
             {turfs.length > 0 && !addingTurf && (
               <select
                 value={turfId}
                 onChange={(e) => setTurfId(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                className="mt-1 block w-full rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
               >
                 <option value="">Not yet decided</option>
                 {turfs.map((t) => (
@@ -236,31 +250,39 @@ export default function NewSessionPage() {
               <button
                 type="button"
                 onClick={() => setAddingTurf(true)}
-                className="mt-2 text-xs font-medium text-green-600 hover:text-green-700"
+                className="mt-2 font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
               >
                 + Add a different turf
               </button>
             ) : (
-              <div className="mt-2 space-y-2 rounded-lg border border-gray-200 bg-white p-3">
+              <div className="mt-2 space-y-2 rounded-xl border border-line bg-turf p-3">
                 <input
                   type="text"
                   placeholder="Turf name"
                   value={newTurfName}
                   onChange={(e) => setNewTurfName(e.target.value)}
-                  className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                  className="block w-full rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
                 />
                 <input
                   type="text"
                   placeholder="Address (optional)"
                   value={newTurfAddress}
                   onChange={(e) => setNewTurfAddress(e.target.value)}
-                  className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                  className="block w-full rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
+                />
+                <TurfLocationPicker
+                  lat={newTurfLat}
+                  lng={newTurfLng}
+                  onChange={(lat, lng) => {
+                    setNewTurfLat(lat);
+                    setNewTurfLng(lng);
+                  }}
                 />
                 <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={handleAddTurf}
-                    className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+                    className="rounded-lg border border-line bg-turf-raised px-3 py-1.5 text-xs font-semibold text-chalk transition-colors hover:border-chalk-dim"
                   >
                     Save turf
                   </button>
@@ -268,7 +290,7 @@ export default function NewSessionPage() {
                     <button
                       type="button"
                       onClick={() => setAddingTurf(false)}
-                      className="text-xs text-gray-500 hover:text-gray-700"
+                      className="font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
                     >
                       Cancel
                     </button>
@@ -279,15 +301,15 @@ export default function NewSessionPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Date &amp; time</label>
+            <label className="block font-mono text-[11px] uppercase tracking-widest text-chalk-dim">Date &amp; time</label>
             <div className="mt-1 flex gap-2">
               <button
                 type="button"
                 onClick={() => setDateMode("single")}
                 className={`rounded-full px-3 py-1 text-xs font-semibold ${
                   dateMode === "single"
-                    ? "bg-green-600 text-white"
-                    : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+                    ? "bg-floodlight text-night"
+                    : "border border-line text-chalk-dim hover:text-chalk"
                 }`}
               >
                 One day
@@ -297,8 +319,8 @@ export default function NewSessionPage() {
                 onClick={() => setDateMode("poll")}
                 className={`rounded-full px-3 py-1 text-xs font-semibold ${
                   dateMode === "poll"
-                    ? "bg-green-600 text-white"
-                    : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+                    ? "bg-floodlight text-night"
+                    : "border border-line text-chalk-dim hover:text-chalk"
                 }`}
               >
                 Let the group vote
@@ -312,7 +334,7 @@ export default function NewSessionPage() {
                   required
                   value={singleDate}
                   onChange={(e) => setSingleDate(e.target.value)}
-                  className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                  className="block w-full rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
                 />
                 <TimeRangeSelect
                   start={singleStart}
@@ -330,14 +352,14 @@ export default function NewSessionPage() {
                       type="date"
                       value={d}
                       onChange={(e) => updateDayOption(i, e.target.value)}
-                      className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                      className="block w-full rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
                     />
                   ))}
                   <div className="flex gap-3">
                     <button
                       type="button"
                       onClick={() => setDayOptions((prev) => [...prev, ""])}
-                      className="text-xs font-medium text-green-600 hover:text-green-700"
+                      className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
                     >
                       + Add another day
                     </button>
@@ -345,7 +367,7 @@ export default function NewSessionPage() {
                       <button
                         type="button"
                         onClick={() => setDayOptions((prev) => prev.slice(0, -1))}
-                        className="text-xs text-gray-500 hover:text-gray-700"
+                        className="font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
                       >
                         Remove last
                       </button>
@@ -354,7 +376,7 @@ export default function NewSessionPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-600">
+                  <label className="block font-mono text-[11px] uppercase tracking-wider text-chalk-dim">
                     Time slot (same for every candidate day)
                   </label>
                   <div className="mt-1">
@@ -367,7 +389,7 @@ export default function NewSessionPage() {
                   </div>
                 </div>
 
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-chalk-dim">
                   The group votes on which day works; capacity and turf below apply to
                   whichever day wins.
                 </p>
@@ -376,7 +398,7 @@ export default function NewSessionPage() {
           </div>
 
           <div>
-            <label htmlFor="maxCapacity" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="maxCapacity" className="block font-mono text-[11px] uppercase tracking-widest text-chalk-dim">
               Max capacity
             </label>
             <input
@@ -384,26 +406,25 @@ export default function NewSessionPage() {
               type="number"
               min={1}
               required
-              value={maxCapacity}
-              onChange={(e) => setMaxCapacity(Number(e.target.value))}
-              className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+              value={maxCapacityInput}
+              onChange={(e) => setMaxCapacityInput(e.target.value)}
+              onBlur={() => {
+                if (maxCapacityInput.trim() === "") setMaxCapacityInput("0");
+              }}
+              className="mt-1 block w-full rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
             />
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-card-red">{error}</p>}
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="w-full rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
-          >
-            {saving ? "Creating…" : "Create session"}
-          </button>
+          <NeoPopButton type="submit" className="w-full" disabled={saving}>
+            {saving ? "CREATING…" : "CREATE SESSION"}
+          </NeoPopButton>
 
           <button
             type="button"
             onClick={() => router.push(`/groups/${groupId}`)}
-            className="w-full text-sm text-gray-500 hover:text-gray-700"
+            className="w-full font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
           >
             ← Cancel
           </button>

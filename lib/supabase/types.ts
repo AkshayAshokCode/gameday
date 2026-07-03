@@ -7,6 +7,7 @@ export type UserRow = {
   name: string;
   phone: string;
   avatar_url: string | null;
+  upi_id: string | null;
   created_at: string;
 }
 export type UserInsert = {
@@ -14,6 +15,7 @@ export type UserInsert = {
   name: string;
   phone: string;
   avatar_url?: string | null;
+  upi_id?: string | null;
 }
 
 export type GroupRow = {
@@ -73,6 +75,7 @@ export type SessionRow = {
   max_capacity: number;
   team_selection_mode: string;
   status: string;
+  cost_per_head: number | null;
   created_at: string;
 }
 export type SessionInsert = {
@@ -85,6 +88,7 @@ export type SessionInsert = {
   max_capacity?: number;
   team_selection_mode?: string;
   status?: string;
+  cost_per_head?: number | null;
 }
 
 export type SessionDayOptionRow = {
@@ -170,6 +174,7 @@ export type PaymentInsert = {
   collector_id?: string | null;
   amount?: number | null;
   status?: string;
+  marked_at?: string | null;
 }
 
 export type SessionCaptainRow = {

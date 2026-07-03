@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth, useSupabase } from "@/lib/auth-context";
+import { NeoPopButton } from "@/components/NeoPopButton";
 import type { Database } from "@/lib/supabase/types";
 
 type Group = Database["public"]["Tables"]["groups"]["Row"];
@@ -33,47 +34,70 @@ export default function HomePage() {
   if (isLoading || !user) return null;
 
   return (
-    <main className="min-h-screen bg-gray-50 p-8">
-      <div className="mx-auto max-w-md space-y-6">
-        <div className="flex items-center justify-between">
+    <main className="min-h-screen bg-night p-6">
+      <div className="mx-auto max-w-md space-y-8">
+        <div className="flex items-start justify-between pt-2">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">GameDay</h1>
-            <p className="text-sm text-gray-500">Welcome, {user.name}</p>
+            <p className="font-mono text-[11px] uppercase tracking-widest text-chalk-dim">
+              Welcome back
+            </p>
+            <h1 className="mt-1 text-3xl font-bold tracking-tight text-chalk">
+              {user.name}
+            </h1>
           </div>
-          <button
-            onClick={signOut}
-            className="text-sm text-red-500 hover:text-red-700"
-          >
-            Sign out
-          </button>
+          <div className="flex flex-col items-end gap-1 pt-1">
+            <Link
+              href="/profile"
+              className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
+            >
+              Profile
+            </Link>
+            <button
+              onClick={signOut}
+              className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-card-red"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-700">Your groups</h2>
+            <h2 className="font-mono text-[11px] uppercase tracking-widest text-chalk-dim">
+              Your groups
+            </h2>
             <Link
               href="/groups/new"
-              className="text-sm font-medium text-green-600 hover:text-green-700"
+              className="font-mono text-xs uppercase tracking-wider text-floodlight hover:opacity-80"
             >
-              + Create group
+              + Create
             </Link>
           </div>
 
           {loadingGroups ? (
-            <p className="text-sm text-gray-400">Loading…</p>
+            <p className="font-mono text-xs uppercase tracking-wider text-chalk-dim">
+              Loading…
+            </p>
           ) : groups.length === 0 ? (
-            <p className="text-sm text-gray-400">You&apos;re not in any groups yet.</p>
+            <div className="rounded-xl border border-line bg-turf p-6 text-center space-y-4">
+              <p className="font-mono text-xs uppercase tracking-wider text-chalk-dim">
+                No groups yet. Start one.
+              </p>
+              <NeoPopButton onClick={() => router.push("/groups/new")}>
+                CREATE A GROUP
+              </NeoPopButton>
+            </div>
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               {groups.map((g) => (
                 <li key={g.id}>
                   <Link
                     href={`/groups/${g.id}`}
-                    className="block rounded-lg border border-gray-200 bg-white p-4 hover:border-green-500"
+                    className="block rounded-xl border border-line bg-turf p-5 transition-colors hover:border-chalk-dim"
                   >
-                    <p className="font-medium text-gray-900">{g.name}</p>
-                    <p className="mt-1 text-xs text-gray-400">
-                      Invite link: /invite/{g.invite_code}
+                    <p className="text-lg font-semibold text-chalk">{g.name}</p>
+                    <p className="mt-1 font-mono text-[11px] uppercase tracking-wider text-chalk-dim">
+                      Invite · /invite/{g.invite_code}
                     </p>
                   </Link>
                 </li>

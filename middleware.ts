@@ -25,6 +25,11 @@ export function middleware(req: NextRequest) {
   if (!session) {
     const loginUrl = req.nextUrl.clone();
     loginUrl.pathname = "/login";
+    loginUrl.search = "";
+    // Preserve where the user was headed (e.g. a session link shared in
+    // WhatsApp) so login/verify can send them back instead of dropping them
+    // on the home page.
+    loginUrl.searchParams.set("next", pathname + req.nextUrl.search);
     return NextResponse.redirect(loginUrl);
   }
 
