@@ -11,11 +11,15 @@ export function HoldToConfirm({
   onConfirm,
   disabled,
   duration = 600,
+  // Destructive actions (e.g. delete session) get red chrome and a longer
+  // default is set by the caller — the fill mechanics are identical.
+  danger = false,
   children,
 }: {
   onConfirm: () => void;
   disabled?: boolean;
   duration?: number;
+  danger?: boolean;
   children: ReactNode;
 }) {
   const [holding, setHolding] = useState(false);
@@ -49,11 +53,15 @@ export function HoldToConfirm({
       onPointerCancel={cancel}
       onContextMenu={(e) => e.preventDefault()}
       disabled={disabled}
-      className="relative touch-none select-none overflow-hidden rounded-full border border-line px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-chalk-dim transition-colors hover:border-chalk-dim hover:text-chalk disabled:opacity-50"
+      className={`relative touch-none select-none overflow-hidden rounded-full border px-3 py-2 font-mono text-[11px] uppercase tracking-wider transition-colors disabled:opacity-50 ${
+        danger
+          ? "border-card-red/60 text-card-red hover:border-card-red"
+          : "border-line text-chalk-dim hover:border-chalk-dim hover:text-chalk"
+      }`}
     >
       <span
         aria-hidden
-        className="absolute inset-0 origin-left bg-floodlight/30"
+        className={`absolute inset-0 origin-left ${danger ? "bg-card-red/30" : "bg-floodlight/30"}`}
         style={{
           transform: holding ? "scaleX(1)" : "scaleX(0)",
           transition: holding

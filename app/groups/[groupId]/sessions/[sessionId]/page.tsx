@@ -165,6 +165,8 @@ export default function SessionPage() {
   const [teams, setTeams] = useState<TeamRow[]>([]);
   const [randomizing, setRandomizing] = useState(false);
   const [revealing, setRevealing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   // Ceremony 4: the row just marked paid on this device gets the yellow wash;
   // if that mark settles the whole session, a particle tick fires once.
   const [justPaidId, setJustPaidId] = useState<string | null>(null);
@@ -561,6 +563,25 @@ export default function SessionPage() {
       .eq("id", sessionId);
     if (!updateError) await loadData();
     setReopening(false);
+  }
+
+  async function handleDeleteSession() {
+    setDeleteError("");
+    setDeleting(true);
+    // .select() makes the delete return the removed rows — without it, an
+    // RLS-filtered delete "succeeds" with 0 rows and we'd redirect as if it
+    // worked while the session quietly survived.
+    const { data, error: deleteErr } = await supabase
+      .from("sessions")
+      .delete()
+      .eq("id", sessionId)
+      .select("id");
+    if (deleteErr || !data || data.length === 0) {
+      setDeleteError(friendlyError(deleteErr, "Couldn't delete the session. Try again."));
+      setDeleting(false);
+      return;
+    }
+    router.replace(`/groups/${groupId}`);
   }
 
   async function toggleAttendance(userId: string, attended: boolean) {
@@ -1445,6 +1466,18 @@ export default function SessionPage() {
           >
             {reopening ? "Reopening…" : "↺ Reopen poll"}
           </button>
+        )}
+
+        {canManage && (
+          // Irreversible — takes votes, attendance, teams, and payment records
+          // with it (cascade). Hold-to-confirm with a longer press than
+          // mark-paid so it can't happen by accident.
+          <div className="flex flex-col items-center gap-2 pt-4">
+            <HoldToConfirm onConfirm={handleDeleteSession} disabled={deleting} danger duration={1200}>
+              {deleting ? "Deleting…" : "Hold to delete session"}
+            </HoldToConfirm>
+            {deleteError && <p className="text-sm text-card-red">{deleteError}</p>}
+          </div>
         )}
       </div>
     </main>

@@ -243,6 +243,7 @@ There are no user account "types" — capability is contextual:
 | Mark attendance | ❌ | ✅ | ✅ |
 | Form / re-randomize teams | ❌ | ✅ | ✅ |
 | Set cost, reassign collector, complete session | ❌ | ✅ | ✅ |
+| Delete session (hold-to-confirm, any status) | ❌ | ✅ | ✅ |
 | Mark **own** payment paid | ✅ (hold-to-confirm) | ✅ | ✅ |
 | Mark **others'** payments paid | ❌ | only if collector | only if collector |
 | Remove members from group | ❌ | ❌ | ✅ |
@@ -276,7 +277,7 @@ All routes expect `Authorization: Bearer <gameday JWT>` unless noted. They verif
 RLS philosophy, per table:
 
 - **Reads:** scoped to group membership via the `is_group_member(group_id)` SQL helper. Turfs are globally readable.
-- **Client writes allowed:** own votes/day-votes (insert/update/delete own rows), sessions update (organizer/admin policy), group_turfs (members), attendance upsert (via policy), own-payment status update, collector-payment update, self-join as `member`.
+- **Client writes allowed:** own votes/day-votes (insert/update/delete own rows), sessions update **and delete** (organizer/admin policies), group_turfs (members), attendance upsert (via policy), own-payment status update, collector-payment update, self-join as `member`.
 - **Client writes deliberately absent:** `session_waitlist`, `session_captains`, `payments` inserts, `group_members` as admin — all server-route-only, because they encode invariants (FIFO waitlist, one-payment-per-attendee, admin assignment) that a client shouldn't be able to author.
 
 Notable hardening (migration 003): the original self-join policy didn't constrain `role`, letting anyone insert themselves as `admin` into any group. Fixed to force `role = 'member'` on self-service joins.
@@ -404,6 +405,7 @@ Run in order in the Supabase SQL editor (no CLI pipeline in v1):
 | 008 | `group_turfs` junction (a group's saved turfs) |
 | 009 | Guest team slots: `guest_name` + `invited_by` on `session_captains` |
 | 010 | `users.phone` nullable (Google Sign-In has no phone) |
+| 011 | Session delete policy (organizer/admin; children cascade) |
 
 ---
 
@@ -448,7 +450,7 @@ Deliberate v1 trade-offs, documented so they're not mistaken for bugs:
 - **Phone-OTP sign-in is hidden**, not removed — the exchange route still accepts phone tokens, and `/verify` is a redirect stub. Restoring it is a login-page change (plus Firebase Blaze billing for SMS).
 - **Captain draft** — schema hooks exist (`opted_captain`, `team_selection_mode`) but only random teams are implemented.
 - **Invite links don't rotate** — possession = entry. Fine for trusted friend groups; "regenerate invite" is a small future feature.
-- **No self-leave / no group- or session-deletion UI** — admins can remove members; groups and sessions currently persist forever (deletion requires direct DB access).
+- **No self-leave / no group-deletion UI** — admins can remove members and delete sessions (hold-to-confirm on the session page), but groups persist forever and members can't leave on their own (both require direct DB access).
 - **Re-randomize isn't attendance-aware** — it reshuffles the same confirmed pool even after attendance is marked, so a no-show can appear on a roster.
 - **No realtime** — headcounts update on refetch, not via subscriptions.
 - **Avatars** — Google profile photos are stored but member lists still render initials.

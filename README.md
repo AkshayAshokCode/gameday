@@ -55,6 +55,23 @@ One invite link, dropped once in the group chat. Anyone who clicks it lands in t
 
 ---
 
+## A Look Around
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/group.png" alt="Group hub with live headcount hero card" width="260"/><br/><sub><b>The group hub</b> — one glance, the whole picture</sub></td>
+    <td align="center"><img src="docs/screenshots/voting.png" alt="Session voting with confirmed list and guests" width="260"/><br/><sub><b>One-tap voting</b> — guests included</sub></td>
+    <td align="center"><img src="docs/screenshots/day-poll.png" alt="Day poll with vote tallies per candidate day" width="260"/><br/><sub><b>Day polls</b> — the group picks the day</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/squads.png" alt="Randomized Team A and Team B squads" width="260"/><br/><sub><b>Fair squads</b> — one tap, guests get slots too</sub></td>
+    <td align="center"><img src="docs/screenshots/payments.png" alt="UPI payment with QR code and collection progress" width="260"/><br/><sub><b>Settling up</b> — UPI QR, live collection bar</sub></td>
+    <td align="center"><img src="docs/screenshots/login.png" alt="Google sign-in screen" width="260"/><br/><sub><b>Zero-friction entry</b> — one tap with Google</sub></td>
+  </tr>
+</table>
+
+---
+
 ## The Feel
 
 GameDay doesn't look like an admin tool, because organizing the week's game shouldn't feel like filing a report. The design system — **"Floodlit"** — is a turf at night under floodlights: everything dark except what matters, one floodlight-yellow action per screen, buttons that physically depress when pressed, numbers that count up instead of jumping, and small ceremonies for the moments that deserve them — locking in your spot, the squad reveal, settling the last payment, a streak milestone.
