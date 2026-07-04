@@ -5,7 +5,8 @@ export type UserRow = {
   id: string;
   firebase_uid: string;
   name: string;
-  phone: string;
+  // Null for Google Sign-In accounts — only phone-OTP accounts have this.
+  phone: string | null;
   avatar_url: string | null;
   upi_id: string | null;
   created_at: string;
@@ -13,7 +14,7 @@ export type UserRow = {
 export type UserInsert = {
   firebase_uid: string;
   name: string;
-  phone: string;
+  phone?: string | null;
   avatar_url?: string | null;
   upi_id?: string | null;
 }

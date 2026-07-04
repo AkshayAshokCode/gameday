@@ -16,12 +16,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "idToken required" }, { status: 400 });
     }
 
-    // 1. Verify Firebase ID token
+    // 1. Verify Firebase ID token. Phone-OTP tokens carry phone_number;
+    // Google Sign-In tokens carry name/picture instead — never both.
     const decoded = await adminAuth.verifyIdToken(idToken);
-    const phone = decoded.phone_number;
-    if (!phone) {
+    const phone = decoded.phone_number ?? null;
+    if (!phone && !decoded.email) {
       return NextResponse.json(
-        { error: "Token must contain a phone number" },
+        { error: "Token must contain a phone number or an email" },
         { status: 400 }
       );
     }
@@ -35,17 +36,19 @@ export async function POST(req: NextRequest) {
       .single();
 
     let userId: string;
-    let userRecord: { id: string; name: string; phone: string; avatar_url: string | null };
+    let userRecord: { id: string; name: string; phone: string | null; avatar_url: string | null };
 
     if (existing) {
       userId = existing.id;
       userRecord = existing;
     } else {
-      // New phone number. Don't create until we have a name — the client
-      // shows the name step only in this case, so returning users are never
-      // asked. (This is only reachable after the OTP proved phone ownership,
-      // so it leaks nothing about which numbers are registered.)
-      if (!name?.trim()) {
+      // Google Sign-In already supplies a name, so only the phone-OTP path
+      // (no `decoded.name`) ever needs the client's separate name step —
+      // returning users are never asked either way. (This is only reachable
+      // after the OTP/Google flow proved identity, so it leaks nothing about
+      // which numbers/emails are registered.)
+      const resolvedName = name?.trim() || decoded.name;
+      if (!resolvedName) {
         return NextResponse.json({ needsName: true });
       }
 
@@ -53,8 +56,9 @@ export async function POST(req: NextRequest) {
         .from("users")
         .insert({
           firebase_uid: decoded.uid,
-          name: name.trim(),
+          name: resolvedName,
           phone,
+          avatar_url: decoded.picture ?? null,
         })
         .select("id, name, phone, avatar_url")
         .single();

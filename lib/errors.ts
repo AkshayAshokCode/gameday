@@ -3,16 +3,13 @@
 // 2. Messages our own API routes wrote (already human) → passed through.
 // 3. Anything technical-looking (Postgres, JWT, fetch internals) → fallback.
 const AUTH_MESSAGES: Record<string, string> = {
-  "auth/invalid-phone-number": "That phone number doesn't look right — check the 10 digits.",
-  "auth/missing-phone-number": "Enter your phone number first.",
   "auth/too-many-requests": "Too many attempts. Give it a few minutes, then try again.",
-  "auth/invalid-verification-code": "That code didn't match. Check the SMS and try again.",
-  "auth/code-expired": "That code has expired — request a new one.",
   "auth/network-request-failed": "Couldn't reach the network. Check your connection and retry.",
   "auth/operation-not-allowed": "Sign-in is temporarily unavailable. Please try again later.",
-  "auth/captcha-check-failed": "Human check failed — refresh the page and try again.",
-  "auth/quota-exceeded": "SMS limit reached for now. Try again in a while.",
   "auth/user-disabled": "This account has been disabled.",
+  "auth/popup-blocked": "Your browser blocked the sign-in popup — allow popups for this site and try again.",
+  "auth/account-exists-with-different-credential":
+    "That email is already linked to a different sign-in method.",
 };
 
 const TECHY =
