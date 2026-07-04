@@ -39,7 +39,6 @@ export default function ProfilePage() {
   const { user, isLoading } = useAuth();
   const supabase = useSupabase();
   const [groupStats, setGroupStats] = useState<GroupStats[]>([]);
-  const [reliabilityPct, setReliabilityPct] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [upiIdInput, setUpiIdInput] = useState("");
   const [savingUpi, setSavingUpi] = useState(false);
@@ -63,18 +62,8 @@ export default function ProfilePage() {
         .select("attended, sessions!inner(scheduled_at, group_id)")
         .eq("user_id", user.id),
       supabase.from("users").select("upi_id").eq("id", user.id).single(),
-      supabase.from("payments").select("status").eq("payer_id", user.id),
-    ]).then(([membershipsRes, attendanceRes, userRes, paymentsRes]) => {
+    ]).then(([membershipsRes, attendanceRes, userRes]) => {
       setUpiIdInput(userRes.data?.upi_id ?? "");
-
-      const paymentRows = paymentsRes.data ?? [];
-      setReliabilityPct(
-        paymentRows.length > 0
-          ? Math.round(
-              (paymentRows.filter((p) => p.status === "paid").length / paymentRows.length) * 100
-            )
-          : null
-      );
 
       const memberships = (membershipsRes.data ?? []) as unknown as GroupMembership[];
       const records = (attendanceRes.data ?? []) as unknown as AttendanceWithSession[];
@@ -130,10 +119,7 @@ export default function ProfilePage() {
 
   if (isLoading || !user || loading) return null;
 
-  const overallTotal = groupStats.reduce((sum, g) => sum + g.total, 0);
   const overallAttended = groupStats.reduce((sum, g) => sum + g.attended, 0);
-  const overallPct = overallTotal > 0 ? Math.round((overallAttended / overallTotal) * 100) : 0;
-  const bestStreak = groupStats.reduce((max, g) => Math.max(max, g.streak), 0);
 
   return (
     <main className="min-h-screen bg-night p-6">
@@ -146,7 +132,7 @@ export default function ProfilePage() {
           ← Home
         </Link>
 
-        {/* The jersey: avatar top-center, streak as the biggest numeral on screen */}
+        {/* The jersey: avatar top-center, games played as the biggest numeral on screen */}
         <div className="flex flex-col items-center text-center">
           <span className="flex h-20 w-20 items-center justify-center rounded-full bg-turf-raised text-2xl font-bold text-chalk ring-2 ring-line">
             {initials(user.name)}
@@ -154,37 +140,11 @@ export default function ProfilePage() {
           <h1 className="mt-3 text-2xl font-bold tracking-tight text-chalk">{user.name}</h1>
 
           <p className="mt-6 font-mono text-[11px] uppercase tracking-[0.25em] text-chalk-dim">
-            Week streak
+            Games
           </p>
           <p className="text-8xl font-bold tracking-tighter text-chalk">
-            <CountUp value={bestStreak} />
+            <CountUp value={overallAttended} />
           </p>
-          {bestStreak > 0 && <span className="text-2xl">🔥</span>}
-
-          <div className="mt-6 grid w-full grid-cols-3 gap-3">
-            <div className="rounded-xl border border-line bg-turf py-3">
-              <p className="text-2xl font-bold tracking-tight text-chalk">{overallAttended}</p>
-              <p className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-chalk-dim">
-                Games
-              </p>
-            </div>
-            <div className="rounded-xl border border-line bg-turf py-3">
-              <p className="text-2xl font-bold tracking-tight text-chalk">
-                {overallTotal > 0 ? `${overallPct}%` : "—"}
-              </p>
-              <p className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-chalk-dim">
-                Attendance
-              </p>
-            </div>
-            <div className="rounded-xl border border-line bg-turf py-3">
-              <p className="text-2xl font-bold tracking-tight text-chalk">
-                {reliabilityPct != null ? `${reliabilityPct}%` : "—"}
-              </p>
-              <p className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-chalk-dim">
-                Reliability
-              </p>
-            </div>
-          </div>
         </div>
 
         <div className="rounded-xl border border-line bg-turf p-4 space-y-2">

@@ -7,6 +7,7 @@ import { useAuth, useSupabase } from "@/lib/auth-context";
 import { NeoPopButton } from "@/components/NeoPopButton";
 import { NumberStepper } from "@/components/NumberStepper";
 import { TimeRangeSelect } from "@/components/TimeRangeSelect";
+import { TurfSelect } from "@/components/TurfSelect";
 import { friendlyError } from "@/lib/errors";
 import { SPORTS } from "@/lib/sports";
 import type { Database } from "@/lib/supabase/types";
@@ -30,7 +31,6 @@ export default function NewSessionPage() {
   const [turfId, setTurfId] = useState("");
   const [addingTurf, setAddingTurf] = useState(false);
   const [newTurfName, setNewTurfName] = useState("");
-  const [newTurfAddress, setNewTurfAddress] = useState("");
   const [newTurfLat, setNewTurfLat] = useState<number | null>(null);
   const [newTurfLng, setNewTurfLng] = useState<number | null>(null);
 
@@ -45,7 +45,7 @@ export default function NewSessionPage() {
   // Kept as raw text (not number) so the field can go fully empty while the
   // user is backspacing — coercing to Number on every keystroke would force
   // a "0" back in immediately and block clearing it.
-  const [maxCapacityInput, setMaxCapacityInput] = useState("20");
+  const [maxCapacityInput, setMaxCapacityInput] = useState("12");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -115,7 +115,6 @@ export default function NewSessionPage() {
       .from("turfs")
       .insert({
         name: newTurfName.trim(),
-        address: newTurfAddress.trim() || null,
         lat: newTurfLat,
         lng: newTurfLng,
         default_capacity: Number(maxCapacityInput) || 0,
@@ -140,7 +139,6 @@ export default function NewSessionPage() {
     setTurfId(data.id);
     setAddingTurf(false);
     setNewTurfName("");
-    setNewTurfAddress("");
     setNewTurfLat(null);
     setNewTurfLng(null);
   }
@@ -257,39 +255,15 @@ export default function NewSessionPage() {
           <div>
             <label className="block font-mono text-[11px] uppercase tracking-widest text-chalk-dim">Turf</label>
 
-            {turfs.length > 0 && !addingTurf && (() => {
-              const groupTurfs = groupTurfIds
-                .map((id) => turfs.find((t) => t.id === id))
-                .filter((t): t is Turf => Boolean(t));
-              const otherTurfs = turfs.filter((t) => !groupTurfIds.includes(t.id));
-              return (
-                <select
-                  value={turfId}
-                  onChange={(e) => setTurfId(e.target.value)}
-                  className="mt-1 block w-full rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
-                >
-                  <option value="">Not yet decided</option>
-                  {groupTurfs.length > 0 && (
-                    <optgroup label="This group's turfs">
-                      {groupTurfs.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {otherTurfs.length > 0 && (
-                    <optgroup label={groupTurfs.length > 0 ? "Other turfs" : "Turfs"}>
-                      {otherTurfs.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-              );
-            })()}
+            {turfs.length > 0 && !addingTurf && (
+              <TurfSelect
+                turfs={turfs}
+                groupTurfIds={groupTurfIds}
+                value={turfId}
+                onChange={setTurfId}
+                className="mt-1 block w-full"
+              />
+            )}
 
             {!addingTurf ? (
               <button
@@ -306,13 +280,6 @@ export default function NewSessionPage() {
                   placeholder="Turf name"
                   value={newTurfName}
                   onChange={(e) => setNewTurfName(e.target.value)}
-                  className="block w-full rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
-                />
-                <input
-                  type="text"
-                  placeholder="Address (optional)"
-                  value={newTurfAddress}
-                  onChange={(e) => setNewTurfAddress(e.target.value)}
                   className="block w-full rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
                 />
                 <TurfLocationPicker

@@ -235,7 +235,7 @@ export default function GroupPage() {
                 </p>
                 <p className="mt-1 text-6xl font-bold tracking-tighter text-chalk">
                   <CountUp value={headcount} />
-                  <span className="text-2xl font-semibold text-chalk-dim">
+                  <span className="ml-1.5 text-2xl font-semibold tracking-normal text-chalk-dim">
                     /{hero.max_capacity}
                   </span>
                 </p>
@@ -276,12 +276,7 @@ export default function GroupPage() {
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link
-              href={`/groups/${groupId}/leaderboard`}
-              className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
-            >
-              🏆 Leaderboard
-            </Link>
+            {/* Leaderboard temporarily disabled — see leaderboard/page.tsx redirect. */}
             <Link
               href={`/groups/${groupId}/turfs`}
               className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"

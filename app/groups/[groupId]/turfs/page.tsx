@@ -13,7 +13,6 @@ const TurfLocationPicker = dynamic(() => import("@/components/TurfLocationPicker
 interface TurfInfo {
   id: string;
   name: string;
-  address: string | null;
   lat: number | null;
   lng: number | null;
 }
@@ -33,7 +32,6 @@ export default function GroupTurfsPage() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
-  const [address, setAddress] = useState("");
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -44,12 +42,12 @@ export default function GroupTurfsPage() {
       supabase.from("groups").select("name").eq("id", groupId).single(),
       supabase
         .from("group_turfs")
-        .select("turf_id, turfs(id, name, address, lat, lng)")
+        .select("turf_id, turfs(id, name, lat, lng)")
         .eq("group_id", groupId)
         .order("created_at", { ascending: false }),
       supabase
         .from("sessions")
-        .select("turf_id, turfs(id, name, address, lat, lng)")
+        .select("turf_id, turfs(id, name, lat, lng)")
         .eq("group_id", groupId)
         .not("turf_id", "is", null),
     ]);
@@ -93,7 +91,6 @@ export default function GroupTurfsPage() {
         .from("turfs")
         .insert({
           name: name.trim(),
-          address: address.trim() || null,
           lat,
           lng,
           added_by: user?.id,
@@ -108,7 +105,6 @@ export default function GroupTurfsPage() {
       if (linkError) throw new Error(linkError.message);
 
       setName("");
-      setAddress("");
       setLat(null);
       setLng(null);
       setAdding(false);
@@ -174,13 +170,6 @@ export default function GroupTurfsPage() {
                 onChange={(e) => setName(e.target.value)}
                 className={inputCls}
               />
-              <input
-                type="text"
-                placeholder="Address (optional)"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                className={inputCls}
-              />
               <TurfLocationPicker
                 lat={lat}
                 lng={lng}
@@ -221,22 +210,18 @@ export default function GroupTurfsPage() {
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-chalk">{t.name}</p>
-                    <p className="truncate font-mono text-[11px] text-chalk-dim">
-                      {t.address ?? "No address"}
-                      {t.lat != null && t.lng != null && (
-                        <>
-                          {" · "}
-                          <a
-                            href={`https://www.google.com/maps?q=${t.lat},${t.lng}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-floodlight hover:opacity-80"
-                          >
-                            📍 Map
-                          </a>
-                        </>
-                      )}
-                    </p>
+                    {t.lat != null && t.lng != null && (
+                      <p className="truncate font-mono text-[11px] text-chalk-dim">
+                        <a
+                          href={`https://www.google.com/maps?q=${t.lat},${t.lng}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-floodlight hover:opacity-80"
+                        >
+                          📍 Map
+                        </a>
+                      </p>
+                    )}
                   </div>
                   <button
                     onClick={() => handleRemove(t.id)}
@@ -264,9 +249,18 @@ export default function GroupTurfsPage() {
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm text-chalk">{t.name}</p>
-                    <p className="truncate font-mono text-[11px] text-chalk-dim">
-                      {t.address ?? "No address"}
-                    </p>
+                    {t.lat != null && t.lng != null && (
+                      <p className="truncate font-mono text-[11px] text-chalk-dim">
+                        <a
+                          href={`https://www.google.com/maps?q=${t.lat},${t.lng}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-floodlight hover:opacity-80"
+                        >
+                          📍 Map
+                        </a>
+                      </p>
+                    )}
                   </div>
                   <button
                     onClick={() => handleSaveExisting(t.id)}

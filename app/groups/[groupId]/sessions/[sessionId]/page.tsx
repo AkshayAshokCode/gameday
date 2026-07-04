@@ -13,6 +13,7 @@ import { NeoPopButton } from "@/components/NeoPopButton";
 import { NumberStepper } from "@/components/NumberStepper";
 import { SquadRevealOverlay } from "@/components/SquadReveal";
 import { TimeRangeSelect } from "@/components/TimeRangeSelect";
+import { TurfSelect } from "@/components/TurfSelect";
 import { useVoteCeremony } from "@/components/VoteCeremony";
 import { friendlyError } from "@/lib/errors";
 import { sportEmoji } from "@/lib/sports";
@@ -29,7 +30,7 @@ interface SessionDetail {
   status: string;
   cost_per_head: number | null;
   sport: string | null;
-  turfs: { name: string; address: string | null; lat: number | null; lng: number | null } | null;
+  turfs: { name: string; lat: number | null; lng: number | null } | null;
 }
 
 interface TurfOption {
@@ -94,7 +95,9 @@ interface GroupMemberOption {
 }
 
 interface TeamRow {
-  user_id: string;
+  id: string;
+  user_id: string | null;
+  guest_name: string | null;
   team: string;
   users: { name: string } | null;
 }
@@ -150,6 +153,7 @@ export default function SessionPage() {
   const [attendance, setAttendance] = useState<AttendanceRow[]>([]);
   const [markingAttendance, setMarkingAttendance] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [reopening, setReopening] = useState(false);
   const [costPerHeadInput, setCostPerHeadInput] = useState("");
   const [groupMembersForCollector, setGroupMembersForCollector] = useState<GroupMemberOption[]>([]);
   const [settingCollector, setSettingCollector] = useState(false);
@@ -171,7 +175,7 @@ export default function SessionPage() {
       supabase
         .from("sessions")
         .select(
-          "id, group_id, organizer_id, payment_collector_id, turf_id, scheduled_at, ends_at, max_capacity, status, cost_per_head, sport, turfs(name, address, lat, lng)"
+          "id, group_id, organizer_id, payment_collector_id, turf_id, scheduled_at, ends_at, max_capacity, status, cost_per_head, sport, turfs(name, lat, lng)"
         )
         .eq("id", sessionId)
         .single(),
@@ -264,7 +268,10 @@ export default function SessionPage() {
       if (sessionData.status === "locked" || sessionData.status === "completed") {
         const { data: teamRows } = await supabase
           .from("session_captains")
-          .select("user_id, team, users(name)")
+          // `invited_by` is a second FK to users(id), so the embed must name
+          // the constraint explicitly — plain `users(name)` is now ambiguous
+          // and PostgREST returns 300 Multiple Choices.
+          .select("id, user_id, guest_name, team, users!session_captains_user_id_fkey(name)")
           .eq("session_id", sessionId);
         setTeams((teamRows ?? []) as unknown as TeamRow[]);
       } else {
@@ -415,6 +422,15 @@ export default function SessionPage() {
 
   async function castVote(votedIn: boolean, ev?: React.MouseEvent) {
     setError("");
+    // Built by index rather than sliced from guestNames — slicing a shorter
+    // array just returns however many entries exist, so an untouched guest
+    // field (never typed into, so no entry at all) would silently skip
+    // validation instead of showing up as an empty string.
+    const trimmedGuestNames = Array.from({ length: guestCountNum }, (_, i) => (guestNames[i] ?? "").trim());
+    if (votedIn && guestCountNum > 0 && trimmedGuestNames.some((n) => !n)) {
+      setError("Enter a name for each guest");
+      return;
+    }
     setVoteAction(votedIn ? "in" : "out");
     // Ceremony 1: fire the sweep + burst from the tap point the moment a
     // not-yet-confirmed member votes in (optimistic — failure is rare and
@@ -432,9 +448,7 @@ export default function SessionPage() {
         body: JSON.stringify({
           voted_in: votedIn,
           guest_count: votedIn ? guestCountNum : 0,
-          guest_names: votedIn
-            ? guestNames.slice(0, guestCountNum).map((n) => n.trim()).filter(Boolean)
-            : [],
+          guest_names: votedIn ? trimmedGuestNames : [],
         }),
       });
       if (!res.ok) {
@@ -535,6 +549,18 @@ export default function SessionPage() {
       .update({ status: "locked" })
       .eq("id", sessionId);
     if (!updateError) await loadData();
+  }
+
+  // Undo for an accidental close — only offered before teams are formed, since
+  // re-opening voting after squads are set would leave the roster stale.
+  async function handleReopenPoll() {
+    setReopening(true);
+    const { error: updateError } = await supabase
+      .from("sessions")
+      .update({ status: "open" })
+      .eq("id", sessionId);
+    if (!updateError) await loadData();
+    setReopening(false);
   }
 
   async function toggleAttendance(userId: string, attended: boolean) {
@@ -640,8 +666,8 @@ export default function SessionPage() {
       <AnimatePresence>
         {revealing && teams.length > 0 && (
           <SquadRevealOverlay
-            teamA={teams.filter((t) => t.team === "A").map((t) => t.users?.name ?? "?")}
-            teamB={teams.filter((t) => t.team === "B").map((t) => t.users?.name ?? "?")}
+            teamA={teams.filter((t) => t.team === "A").map((t) => t.users?.name ?? t.guest_name ?? "?")}
+            teamB={teams.filter((t) => t.team === "B").map((t) => t.users?.name ?? t.guest_name ?? "?")}
             emoji={sportGlyph}
             onClose={() => setRevealing(false)}
           />
@@ -684,7 +710,6 @@ export default function SessionPage() {
           {session.turfs ? (
             <p className="mt-1 text-sm text-chalk-dim">
               {session.turfs.name}
-              {session.turfs.address ? ` · ${session.turfs.address}` : ""}
               {session.turfs.lat != null && session.turfs.lng != null && (
                 <>
                   {" · "}
@@ -740,41 +765,13 @@ export default function SessionPage() {
                       />
                     </div>
                   )}
-                  <select
+                  <TurfSelect
+                    turfs={turfOptions}
+                    groupTurfIds={groupTurfIds}
                     value={editTurfId}
-                    onChange={(e) => setEditTurfId(e.target.value)}
-                    className={`block w-full ${inputCls}`}
-                  >
-                    <option value="">Not yet decided</option>
-                    {(() => {
-                      const groupTurfs = groupTurfIds
-                        .map((id) => turfOptions.find((t) => t.id === id))
-                        .filter((t): t is TurfOption => Boolean(t));
-                      const otherTurfs = turfOptions.filter((t) => !groupTurfIds.includes(t.id));
-                      return (
-                        <>
-                          {groupTurfs.length > 0 && (
-                            <optgroup label="This group's turfs">
-                              {groupTurfs.map((t) => (
-                                <option key={t.id} value={t.id}>
-                                  {t.name}
-                                </option>
-                              ))}
-                            </optgroup>
-                          )}
-                          {otherTurfs.length > 0 && (
-                            <optgroup label={groupTurfs.length > 0 ? "Other turfs" : "Turfs"}>
-                              {otherTurfs.map((t) => (
-                                <option key={t.id} value={t.id}>
-                                  {t.name}
-                                </option>
-                              ))}
-                            </optgroup>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </select>
+                    onChange={setEditTurfId}
+                    className="block w-full"
+                  />
                   <div className="flex items-center gap-3">
                     <p className={eyebrowCls}>Max capacity</p>
                     <NumberStepper value={editMaxCapacity} onChange={setEditMaxCapacity} min={1} />
@@ -903,7 +900,7 @@ export default function SessionPage() {
               />
               <p className="relative text-6xl font-bold tracking-tighter text-chalk">
                 <CountUp value={headcount} />
-                <span className="text-2xl font-semibold text-chalk-dim">
+                <span className="ml-1.5 text-2xl font-semibold tracking-normal text-chalk-dim">
                   /{session.max_capacity}
                 </span>
               </p>
@@ -945,7 +942,8 @@ export default function SessionPage() {
                   <input
                     key={i}
                     type="text"
-                    placeholder={`Guest ${i + 1} name`}
+                    required
+                    placeholder={`Guest ${i + 1} name (required)`}
                     value={guestNames[i] ?? ""}
                     onChange={(e) => updateGuestName(i, e.target.value)}
                     className={`block w-full ${inputCls}`}
@@ -1148,6 +1146,8 @@ export default function SessionPage() {
               )}
             </div>
 
+            {error && <p className="text-sm text-card-red">{error}</p>}
+
             {teams.length === 0 ? (
               canManage ? (
                 <NeoPopButton
@@ -1172,8 +1172,13 @@ export default function SessionPage() {
                       {teams
                         .filter((t) => t.team === teamKey)
                         .map((t) => (
-                          <li key={t.user_id} className="text-sm text-chalk">
-                            {t.users?.name}
+                          <li key={t.id} className="text-sm text-chalk">
+                            {t.users?.name ?? t.guest_name}
+                            {t.guest_name && (
+                              <span className="ml-1 font-mono text-[10px] uppercase tracking-wider text-chalk-dim">
+                                guest
+                              </span>
+                            )}
                           </li>
                         ))}
                     </ul>
@@ -1427,6 +1432,19 @@ export default function SessionPage() {
           >
             {completing ? "COMPLETING…" : "MARK SESSION COMPLETE"}
           </NeoPopButton>
+        )}
+
+        {!isDayPoll && canManage && session.status === "locked" && teams.length === 0 && (
+          // Undo for an accidental close — hidden once teams are formed, since
+          // re-opening voting after squads are set would leave the roster stale.
+          <button
+            type="button"
+            onClick={handleReopenPoll}
+            disabled={reopening}
+            className="w-full text-center font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk disabled:opacity-50"
+          >
+            {reopening ? "Reopening…" : "↺ Reopen poll"}
+          </button>
         )}
       </div>
     </main>

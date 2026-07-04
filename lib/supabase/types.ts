@@ -194,12 +194,19 @@ export type PaymentInsert = {
 export type SessionCaptainRow = {
   id: string;
   session_id: string;
-  user_id: string;
+  // Exactly one of (user_id) or (guest_name + invited_by) is set — a guest
+  // has no users(id) of their own, so they carry a label and a pointer to
+  // the member who brought them instead.
+  user_id: string | null;
+  guest_name: string | null;
+  invited_by: string | null;
   team: string;
 }
 export type SessionCaptainInsert = {
   session_id: string;
-  user_id: string;
+  user_id?: string | null;
+  guest_name?: string | null;
+  invited_by?: string | null;
   team: string;
 }
 

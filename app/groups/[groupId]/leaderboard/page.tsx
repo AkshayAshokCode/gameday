@@ -73,6 +73,12 @@ export default function LeaderboardPage() {
     if (!isLoading && !user) router.replace("/login");
   }, [user, isLoading, router]);
 
+  // Leaderboard is temporarily disabled — kick anyone who lands here (bookmark,
+  // back button, etc.) back to the group page. Remove this effect to re-enable.
+  useEffect(() => {
+    router.replace(`/groups/${groupId}`);
+  }, [router, groupId]);
+
   useEffect(() => {
     if (!loading) {
       const t = setTimeout(() => setHasAnimated(true), 800);
