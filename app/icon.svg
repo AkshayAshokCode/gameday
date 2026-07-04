@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- GameDay brand mark: a ball under floodlights. Night background, a
+       floodlight glow from above, the ball as a floodlight-yellow disc with
+       the pitch-dark pentagon patch. Reads as "yellow dot on dark" at 16px,
+       reads as a football at anything bigger. -->
+  <defs>
+    <radialGradient id="beam" cx="0.5" cy="0" r="0.9">
+      <stop offset="0" stop-color="#e8ff47" stop-opacity="0.28"/>
+      <stop offset="0.55" stop-color="#e8ff47" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#e8ff47" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#0a0e0b"/>
+  <rect width="512" height="512" rx="112" fill="url(#beam)"/>
+  <circle cx="256" cy="276" r="150" fill="#e8ff47"/>
+  <polygon points="256,214 315,257 292.5,326 219.5,326 197,257" fill="#0a0e0b"/>
+</svg>

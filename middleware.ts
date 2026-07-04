@@ -41,9 +41,13 @@ export function middleware(req: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all paths except static files.
-     * Equivalent to: everything that isn't /_next/static, /_next/image, or image files.
+     * Match all paths except Next internals and anything with a file
+     * extension (icons, manifest, images in /public). Without the dot
+     * exclusion, favicon/manifest requests from logged-out visitors get
+     * 307'd to /login — no tab icon on the login page itself, and
+     * Add-to-Home-Screen breaks before sign-in. Page routes never contain
+     * dots, so this is safe.
      */
-    "/((?!_next/static|_next/image|favicon.ico).*)",
+    "/((?!_next/static|_next/image|.*\\..*).*)",
   ],
 };
