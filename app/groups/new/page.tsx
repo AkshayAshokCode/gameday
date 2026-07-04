@@ -107,7 +107,7 @@ export default function NewGroupPage() {
           <button
             type="button"
             onClick={() => router.push("/")}
-            className="w-full font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
+            className="w-full py-2 font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
           >
             ← Cancel
           </button>

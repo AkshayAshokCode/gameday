@@ -179,17 +179,17 @@ export default function GroupTurfsPage() {
                 }}
               />
               {error && <p className="text-sm text-card-red">{error}</p>}
-              <div className="flex gap-2">
+              <div className="flex items-center gap-3">
                 <button
                   onClick={handleAdd}
                   disabled={saving || !name.trim()}
-                  className="rounded-lg border border-line bg-turf-raised px-3 py-1.5 text-xs font-semibold text-chalk transition-colors hover:border-chalk-dim disabled:opacity-50"
+                  className="rounded-lg border border-line bg-turf-raised px-3 py-2.5 text-xs font-semibold text-chalk transition-colors hover:border-chalk-dim disabled:opacity-50"
                 >
                   {saving ? "Saving…" : "Save turf"}
                 </button>
                 <button
                   onClick={() => setAdding(false)}
-                  className="font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
+                  className="px-2 py-2.5 font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
                 >
                   Cancel
                 </button>
@@ -226,7 +226,7 @@ export default function GroupTurfsPage() {
                   <button
                     onClick={() => handleRemove(t.id)}
                     title="Remove from this group's list"
-                    className="font-mono text-xs text-chalk-dim hover:text-card-red"
+                    className="-my-2.5 -mr-2 flex h-11 w-11 shrink-0 items-center justify-center font-mono text-xs text-chalk-dim hover:text-card-red"
                   >
                     ✕
                   </button>

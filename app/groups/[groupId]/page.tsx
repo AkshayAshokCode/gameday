@@ -274,12 +274,12 @@ export default function GroupPage() {
           </div>
         )}
 
-        <div className="flex items-center justify-between">
+        <div className="-my-2 flex items-center justify-between">
           <div className="flex items-center gap-4">
             {/* Leaderboard temporarily disabled — see leaderboard/page.tsx redirect. */}
             <Link
               href={`/groups/${groupId}/turfs`}
-              className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
+              className="px-1 py-3 font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
             >
               🏟️ Turfs
             </Link>
@@ -287,7 +287,7 @@ export default function GroupPage() {
           {hero && (
             <Link
               href={`/groups/${groupId}/sessions/new`}
-              className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
+              className="px-1 py-3 font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
             >
               + New session
             </Link>

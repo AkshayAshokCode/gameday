@@ -777,7 +777,7 @@ export default function SessionPage() {
                     <NumberStepper value={editMaxCapacity} onChange={setEditMaxCapacity} min={1} />
                   </div>
                   {editError && <p className="text-sm text-card-red">{editError}</p>}
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-3">
                     <NeoPopButton
                       variant="secondary"
                       size="sm"
@@ -789,7 +789,7 @@ export default function SessionPage() {
                     <button
                       type="button"
                       onClick={() => setEditingSession(false)}
-                      className="font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
+                      className="px-2 py-2.5 font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
                     >
                       Cancel
                     </button>
@@ -1106,7 +1106,7 @@ export default function SessionPage() {
                         <button
                           onClick={() => toggleAttendance(v.user_id, !attended)}
                           disabled={markingAttendance}
-                          className={`rounded-full px-3 py-1 font-mono text-[11px] uppercase tracking-wider transition-colors disabled:opacity-50 ${
+                          className={`rounded-full px-3 py-2 font-mono text-[11px] uppercase tracking-wider transition-colors disabled:opacity-50 ${
                             attended
                               ? "bg-floodlight font-semibold text-night"
                               : "border border-line text-chalk-dim hover:border-chalk-dim hover:text-chalk"
@@ -1251,7 +1251,7 @@ export default function SessionPage() {
                   </NeoPopButton>
                   <button
                     onClick={() => setSettingCollector(false)}
-                    className="font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
+                    className="px-2 py-2.5 font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
                   >
                     Cancel
                   </button>
@@ -1441,7 +1441,7 @@ export default function SessionPage() {
             type="button"
             onClick={handleReopenPoll}
             disabled={reopening}
-            className="w-full text-center font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk disabled:opacity-50"
+            className="w-full py-2 text-center font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk disabled:opacity-50"
           >
             {reopening ? "Reopening…" : "↺ Reopen poll"}
           </button>

@@ -290,11 +290,11 @@ export default function NewSessionPage() {
                     setNewTurfLng(lng);
                   }}
                 />
-                <div className="flex gap-2">
+                <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={handleAddTurf}
-                    className="rounded-lg border border-line bg-turf-raised px-3 py-1.5 text-xs font-semibold text-chalk transition-colors hover:border-chalk-dim"
+                    className="rounded-lg border border-line bg-turf-raised px-3 py-2.5 text-xs font-semibold text-chalk transition-colors hover:border-chalk-dim"
                   >
                     Save turf
                   </button>
@@ -302,7 +302,7 @@ export default function NewSessionPage() {
                     <button
                       type="button"
                       onClick={() => setAddingTurf(false)}
-                      className="font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
+                      className="px-2 py-2.5 font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
                     >
                       Cancel
                     </button>
@@ -369,11 +369,11 @@ export default function NewSessionPage() {
                       className="block w-full cursor-pointer rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
                     />
                   ))}
-                  <div className="flex gap-3">
+                  <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => setDayOptions((prev) => [...prev, ""])}
-                      className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
+                      className="px-2 py-2.5 font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
                     >
                       + Add another day
                     </button>
@@ -381,7 +381,7 @@ export default function NewSessionPage() {
                       <button
                         type="button"
                         onClick={() => setDayOptions((prev) => prev.slice(0, -1))}
-                        className="font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
+                        className="px-2 py-2.5 font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
                       >
                         Remove last
                       </button>
@@ -432,7 +432,7 @@ export default function NewSessionPage() {
           <button
             type="button"
             onClick={() => router.push(`/groups/${groupId}`)}
-            className="w-full font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
+            className="w-full py-2 font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
           >
             ← Cancel
           </button>

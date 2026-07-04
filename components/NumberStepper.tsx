@@ -32,7 +32,7 @@ export function NumberStepper({
         type="button"
         onClick={() => adjust(-step)}
         disabled={current <= min}
-        className="px-3 text-lg font-semibold text-chalk-dim transition-colors hover:bg-turf-raised hover:text-chalk disabled:opacity-30 disabled:hover:bg-transparent"
+        className="px-3 py-2.5 text-lg font-semibold text-chalk-dim transition-colors hover:bg-turf-raised hover:text-chalk disabled:opacity-30 disabled:hover:bg-transparent"
         aria-label="Decrease"
       >
         −
@@ -45,12 +45,12 @@ export function NumberStepper({
         onBlur={() => {
           if (value.trim() === "") onChange(String(min));
         }}
-        className="w-12 border-x border-line bg-night text-center text-sm text-chalk focus:outline-none"
+        className="w-12 border-x border-line bg-night py-2.5 text-center text-sm text-chalk focus:outline-none"
       />
       <button
         type="button"
         onClick={() => adjust(step)}
-        className="px-3 text-lg font-semibold text-chalk-dim transition-colors hover:bg-turf-raised hover:text-chalk"
+        className="px-3 py-2.5 text-lg font-semibold text-chalk-dim transition-colors hover:bg-turf-raised hover:text-chalk"
         aria-label="Increase"
       >
         +

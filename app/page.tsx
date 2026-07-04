@@ -47,16 +47,19 @@ export default function HomePage() {
               {user.name}
             </h1>
           </div>
-          <div className="flex flex-col items-end gap-1 pt-1">
+          <div className="flex flex-col items-end">
+            {/* Real padding, not just a bigger gap — on mobile the tap target
+                needs to be larger than the visible text, or a thumb reliably
+                fat-fingers the wrong one of two stacked links this close. */}
             <Link
               href="/profile"
-              className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
+              className="px-2 py-2.5 font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
             >
               Profile
             </Link>
             <button
               onClick={signOut}
-              className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-card-red"
+              className="px-2 py-2.5 font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-card-red"
             >
               Sign out
             </button>
