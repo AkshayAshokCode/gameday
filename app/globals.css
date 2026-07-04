@@ -5,6 +5,11 @@
    Full spec: Notion → GameDay — UI/UX Design Plan (CRED-level).
    Rule: floodlight yellow is earned, not decorative — one per screen, max.  */
 :root {
+  /* Native form controls (date/time pickers, selects, scrollbars) render in
+     dark mode — without this, e.g. the date input's calendar icon is drawn
+     black-on-black and effectively disappears. */
+  color-scheme: dark;
+
   --night: #0a0e0b; /* app background — near-black, green undertone */
   --turf: #121a14; /* card / surface background */
   --turf-raised: #1a241c; /* elevated surfaces, modals, pressed states */
@@ -39,4 +44,51 @@ body {
   background: var(--night);
   color: var(--chalk);
   font-family: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Ceremony 5 backdrop: mowing stripes on a night turf, panning slowly. */
+.turf-texture {
+  background-image: repeating-linear-gradient(
+    115deg,
+    var(--night) 0px,
+    var(--night) 48px,
+    #0d130f 48px,
+    #0d130f 96px
+  );
+  background-size: 200% 200%;
+  animation: turf-pan 60s linear infinite;
+}
+
+@keyframes turf-pan {
+  from {
+    background-position: 0% 0%;
+  }
+  to {
+    background-position: 100% 100%;
+  }
+}
+
+/* Safari renders the native number spinner but with near-invisible contrast
+   against a dark background — clickable, but you can't see it. Used on
+   fields where a stepper UI doesn't make sense (e.g. currency amounts). */
+.no-spinner::-webkit-inner-spin-button,
+.no-spinner::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.no-spinner {
+  -moz-appearance: textfield;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turf-texture {
+    animation: none;
+  }
+
+  /* View Transitions collapse to an instant swap. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
 }

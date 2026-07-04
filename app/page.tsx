@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth, useSupabase } from "@/lib/auth-context";
+import { CopyInviteLink } from "@/components/CopyInviteLink";
 import { NeoPopButton } from "@/components/NeoPopButton";
+import { sportEmoji } from "@/lib/sports";
 import type { Database } from "@/lib/supabase/types";
 
 type Group = Database["public"]["Tables"]["groups"]["Row"];
@@ -95,10 +97,10 @@ export default function HomePage() {
                     href={`/groups/${g.id}`}
                     className="block rounded-xl border border-line bg-turf p-5 transition-colors hover:border-chalk-dim"
                   >
-                    <p className="text-lg font-semibold text-chalk">{g.name}</p>
-                    <p className="mt-1 font-mono text-[11px] uppercase tracking-wider text-chalk-dim">
-                      Invite · /invite/{g.invite_code}
+                    <p className="text-lg font-semibold text-chalk">
+                      {sportEmoji(g.sport)} {g.name}
                     </p>
+                    <CopyInviteLink code={g.invite_code} className="mt-2" />
                   </Link>
                 </li>
               ))}

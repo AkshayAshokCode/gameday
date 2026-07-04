@@ -22,5 +22,17 @@ export async function GET(
     return NextResponse.json({ error: "Invite not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ group });
+  // First names only — enough to render the avatar rail without leaking
+  // full member details to an unauthenticated visitor.
+  const { data: members, count } = await db
+    .from("group_members")
+    .select("users(name)", { count: "exact" })
+    .eq("group_id", group.id)
+    .limit(8);
+
+  const memberNames = (members ?? [])
+    .map((m) => (m as unknown as { users: { name: string } | null }).users?.name)
+    .filter((n): n is string => Boolean(n));
+
+  return NextResponse.json({ group, memberNames, memberCount: count ?? memberNames.length });
 }

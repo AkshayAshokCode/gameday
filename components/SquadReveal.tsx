@@ -17,10 +17,12 @@ type Phase = "shuffle" | "deal" | "stamp";
 export function SquadRevealOverlay({
   teamA,
   teamB,
+  emoji = "⚽",
   onClose,
 }: {
   teamA: string[];
   teamB: string[];
+  emoji?: string;
   onClose: () => void;
 }) {
   const total = teamA.length + teamB.length;
@@ -87,7 +89,7 @@ export function SquadRevealOverlay({
                 transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
                 className="absolute inset-0 flex items-center justify-center rounded-xl border border-line bg-turf-raised shadow-lg"
               >
-                <span className="text-lg">⚽</span>
+                <span className="text-lg">{emoji}</span>
               </motion.div>
             ))}
           </div>

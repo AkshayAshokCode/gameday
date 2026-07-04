@@ -44,6 +44,18 @@ export type GroupMemberInsert = {
   role?: string;
 }
 
+export type GroupTurfRow = {
+  group_id: string;
+  turf_id: string;
+  added_by: string | null;
+  created_at: string;
+}
+export type GroupTurfInsert = {
+  group_id: string;
+  turf_id: string;
+  added_by?: string | null;
+}
+
 export type TurfRow = {
   id: string;
   name: string;
@@ -76,6 +88,7 @@ export type SessionRow = {
   team_selection_mode: string;
   status: string;
   cost_per_head: number | null;
+  sport: string | null;
   created_at: string;
 }
 export type SessionInsert = {
@@ -89,6 +102,7 @@ export type SessionInsert = {
   team_selection_mode?: string;
   status?: string;
   cost_per_head?: number | null;
+  sport?: string | null;
 }
 
 export type SessionDayOptionRow = {
@@ -220,6 +234,7 @@ export type Database = {
       groups: { Row: GroupRow; Insert: GroupInsert; Update: Partial<GroupInsert> } & NoRelationships;
       group_members: { Row: GroupMemberRow; Insert: GroupMemberInsert; Update: Partial<GroupMemberInsert> } & NoRelationships;
       turfs: { Row: TurfRow; Insert: TurfInsert; Update: Partial<TurfInsert> } & NoRelationships;
+      group_turfs: { Row: GroupTurfRow; Insert: GroupTurfInsert; Update: never } & NoRelationships;
       sessions: { Row: SessionRow; Insert: SessionInsert; Update: Partial<SessionInsert> } & NoRelationships;
       session_day_options: { Row: SessionDayOptionRow; Insert: SessionDayOptionInsert; Update: never } & NoRelationships;
       session_day_votes: { Row: SessionDayVoteRow; Insert: SessionDayVoteInsert; Update: never } & NoRelationships;

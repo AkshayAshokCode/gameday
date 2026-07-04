@@ -41,11 +41,19 @@ export async function POST(req: NextRequest) {
       userId = existing.id;
       userRecord = existing;
     } else {
+      // New phone number. Don't create until we have a name — the client
+      // shows the name step only in this case, so returning users are never
+      // asked. (This is only reachable after the OTP proved phone ownership,
+      // so it leaks nothing about which numbers are registered.)
+      if (!name?.trim()) {
+        return NextResponse.json({ needsName: true });
+      }
+
       const { data: created, error } = await db
         .from("users")
         .insert({
           firebase_uid: decoded.uid,
-          name: name ?? phone,
+          name: name.trim(),
           phone,
         })
         .select("id, name, phone, avatar_url")

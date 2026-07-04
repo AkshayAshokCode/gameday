@@ -13,12 +13,17 @@ type Size = "sm" | "md" | "lg";
 interface NeoPopButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
+  // In-flight request feedback: keeps full brightness (unlike disabled) and
+  // spins the sport's ball next to the label. The button still ignores clicks.
+  loading?: boolean;
+  // The sport glyph to spin while loading (defaults to football).
+  spinner?: string;
 }
 
 const base =
   "inline-flex items-center justify-center rounded-lg font-semibold select-none " +
   "transition-all duration-[90ms] ease-out " +
-  "disabled:opacity-50 disabled:pointer-events-none";
+  "disabled:pointer-events-none";
 
 const variants: Record<Variant, string> = {
   primary:
@@ -39,13 +44,39 @@ const sizes: Record<Size, string> = {
 };
 
 export const NeoPopButton = forwardRef<HTMLButtonElement, NeoPopButtonProps>(
-  function NeoPopButton({ variant = "primary", size = "md", className = "", ...props }, ref) {
+  function NeoPopButton(
+    {
+      variant = "primary",
+      size = "md",
+      loading = false,
+      spinner = "⚽",
+      className = "",
+      children,
+      disabled,
+      ...props
+    },
+    ref
+  ) {
     return (
       <button
         ref={ref}
-        className={`${base} ${variants[variant]} ${sizes[size]} ${className}`}
+        disabled={disabled || loading}
+        className={`${base} ${variants[variant]} ${sizes[size]} ${
+          loading ? "" : "disabled:opacity-50"
+        } ${className}`}
         {...props}
-      />
+      >
+        {loading ? (
+          <span className="inline-flex items-center gap-2">
+            <span className="animate-spin motion-reduce:animate-none" aria-hidden>
+              {spinner}
+            </span>
+            {children}
+          </span>
+        ) : (
+          children
+        )}
+      </button>
     );
   }
 );

@@ -10,19 +10,25 @@ import { buildUpiLink, generateUpiQr } from "@/lib/upi";
 import { CountUp } from "@/components/CountUp";
 import { HoldToConfirm } from "@/components/HoldToConfirm";
 import { NeoPopButton } from "@/components/NeoPopButton";
+import { NumberStepper } from "@/components/NumberStepper";
 import { SquadRevealOverlay } from "@/components/SquadReveal";
+import { TimeRangeSelect } from "@/components/TimeRangeSelect";
 import { useVoteCeremony } from "@/components/VoteCeremony";
+import { friendlyError } from "@/lib/errors";
+import { sportEmoji } from "@/lib/sports";
 
 interface SessionDetail {
   id: string;
   group_id: string;
   organizer_id: string | null;
   payment_collector_id: string | null;
+  turf_id: string | null;
   scheduled_at: string | null;
   ends_at: string | null;
   max_capacity: number;
   status: string;
   cost_per_head: number | null;
+  sport: string | null;
   turfs: { name: string; address: string | null; lat: number | null; lng: number | null } | null;
 }
 
@@ -121,11 +127,20 @@ export default function SessionPage() {
   // Raw text, not number — see maxCapacityInput in the new-session page for why.
   const [guestCountInput, setGuestCountInput] = useState("0");
   const [guestNames, setGuestNames] = useState<string[]>([]);
-  const [voting, setVoting] = useState(false);
+  const [voteAction, setVoteAction] = useState<"in" | "out" | null>(null);
   const [error, setError] = useState("");
   const [turfOptions, setTurfOptions] = useState<TurfOption[]>([]);
-  const [settingTurf, setSettingTurf] = useState(false);
-  const [selectedTurf, setSelectedTurf] = useState("");
+  const [groupTurfIds, setGroupTurfIds] = useState<string[]>([]);
+  const [groupSport, setGroupSport] = useState<string | null>(null);
+  const [editingSession, setEditingSession] = useState(false);
+  const [editTurfId, setEditTurfId] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editStart, setEditStart] = useState("");
+  const [editEnd, setEditEnd] = useState("");
+  // Raw text, not number — see maxCapacityInput in the new-session page for why.
+  const [editMaxCapacity, setEditMaxCapacity] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState("");
   const [dayOptions, setDayOptions] = useState<DayOptionRow[]>([]);
   const [dayVotes, setDayVotes] = useState<DayVoteRow[]>([]);
   const [dayVoting, setDayVoting] = useState(false);
@@ -156,7 +171,7 @@ export default function SessionPage() {
       supabase
         .from("sessions")
         .select(
-          "id, group_id, organizer_id, payment_collector_id, scheduled_at, ends_at, max_capacity, status, cost_per_head, turfs(name, address, lat, lng)"
+          "id, group_id, organizer_id, payment_collector_id, turf_id, scheduled_at, ends_at, max_capacity, status, cost_per_head, sport, turfs(name, address, lat, lng)"
         )
         .eq("id", sessionId)
         .single(),
@@ -191,6 +206,37 @@ export default function SessionPage() {
       .select("user_id, users(name)")
       .eq("group_id", groupId);
     setGroupMembersForCollector((memberOptions ?? []) as unknown as GroupMemberOption[]);
+
+    // Group turf tier: recently used ∪ explicitly saved (history first) —
+    // primary tier of the set-turf picker.
+    const [{ data: usedTurfs }, { data: savedTurfs }] = await Promise.all([
+      supabase
+        .from("sessions")
+        .select("turf_id, created_at")
+        .eq("group_id", groupId)
+        .not("turf_id", "is", null)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("group_turfs")
+        .select("turf_id")
+        .eq("group_id", groupId)
+        .order("created_at", { ascending: false }),
+    ]);
+    const seenTurfs = new Set<string>();
+    const orderedTurfs: string[] = [];
+    for (const s of usedTurfs ?? []) {
+      if (s.turf_id && !seenTurfs.has(s.turf_id)) {
+        seenTurfs.add(s.turf_id);
+        orderedTurfs.push(s.turf_id);
+      }
+    }
+    for (const g of savedTurfs ?? []) {
+      if (!seenTurfs.has(g.turf_id)) {
+        seenTurfs.add(g.turf_id);
+        orderedTurfs.push(g.turf_id);
+      }
+    }
+    setGroupTurfIds(orderedTurfs);
 
     if (sessionData) {
       const collectorId = sessionData.payment_collector_id ?? sessionData.organizer_id;
@@ -251,6 +297,13 @@ export default function SessionPage() {
         .maybeSingle();
       setIsGroupAdmin(membership?.role === "admin");
     }
+
+    const { data: groupRow } = await supabase
+      .from("groups")
+      .select("sport")
+      .eq("id", groupId)
+      .maybeSingle();
+    setGroupSport(groupRow?.sport ?? null);
 
     const { count } = await supabase
       .from("group_members")
@@ -326,6 +379,11 @@ export default function SessionPage() {
   const leadingOptionId = dayTallies[0]?.id;
   const finalizeSelection = finalizeChoice || leadingOptionId || "";
   const guestCountNum = Number(guestCountInput) || 0;
+  // "Out" = explicitly declined; "yet to vote" = no vote row at all. Showing
+  // them separately is what stops the group chasing people who already said no.
+  const outVoters = votes.filter((v) => !v.voted_in);
+  const votedIds = new Set(votes.map((v) => v.user_id));
+  const yetToVote = groupMembersForCollector.filter((m) => !votedIds.has(m.user_id));
   const myPayment = payments.find((p) => p.payer_id === user.id);
   const isCollector = (session.payment_collector_id ?? session.organizer_id) === user.id;
 
@@ -357,7 +415,7 @@ export default function SessionPage() {
 
   async function castVote(votedIn: boolean, ev?: React.MouseEvent) {
     setError("");
-    setVoting(true);
+    setVoteAction(votedIn ? "in" : "out");
     // Ceremony 1: fire the sweep + burst from the tap point the moment a
     // not-yet-confirmed member votes in (optimistic — failure is rare and
     // still surfaces the error below).
@@ -384,10 +442,10 @@ export default function SessionPage() {
         throw new Error(msg);
       }
       await loadData();
-    } catch (err: any) {
-      setError(err.message ?? "Failed to vote");
+    } catch (err) {
+      setError(friendlyError(err, "Couldn't save your vote. Try again."));
     } finally {
-      setVoting(false);
+      setVoteAction(null);
     }
   }
 
@@ -418,15 +476,56 @@ export default function SessionPage() {
     setFinalizing(false);
   }
 
-  async function handleSetTurf() {
-    if (!selectedTurf) return;
-    const { error: updateError } = await supabase
-      .from("sessions")
-      .update({ turf_id: selectedTurf })
-      .eq("id", sessionId);
-    if (!updateError) {
-      setSettingTurf(false);
+  // Local (not UTC) date/time components, since sessions are always created
+  // at :00/:30 slots via this same picker — no rounding needed on the way back in.
+  function toDateInputValue(iso: string) {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  function toTimeSlotValue(iso: string) {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function openEdit() {
+    setEditError("");
+    setEditTurfId(session?.turf_id ?? "");
+    setEditDate(session?.scheduled_at ? toDateInputValue(session.scheduled_at) : "");
+    setEditStart(session?.scheduled_at ? toTimeSlotValue(session.scheduled_at) : "");
+    setEditEnd(session?.ends_at ? toTimeSlotValue(session.ends_at) : "");
+    setEditMaxCapacity(String(session?.max_capacity ?? ""));
+    setEditingSession(true);
+  }
+
+  async function handleSaveEdit() {
+    setEditError("");
+    // A day poll's timing comes from finalizing a day option, not this panel —
+    // only turf/capacity apply while a session is still proposing.
+    if (!isDayPoll && (!editDate || !editStart || !editEnd)) {
+      setEditError("Pick a date and time slot");
+      return;
+    }
+    const capacity = Number(editMaxCapacity) || 1;
+    setSavingEdit(true);
+    try {
+      const updates = {
+        turf_id: editTurfId || null,
+        max_capacity: capacity,
+        ...(!isDayPoll
+          ? {
+              scheduled_at: new Date(`${editDate}T${editStart}`).toISOString(),
+              ends_at: new Date(`${editDate}T${editEnd}`).toISOString(),
+            }
+          : {}),
+      };
+      const { error: updateError } = await supabase.from("sessions").update(updates).eq("id", sessionId);
+      if (updateError) throw new Error(updateError.message);
+      setEditingSession(false);
       await loadData();
+    } catch (err) {
+      setEditError(friendlyError(err, "Couldn't save changes. Try again."));
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -462,8 +561,8 @@ export default function SessionPage() {
         throw new Error(msg);
       }
       await loadData();
-    } catch (err: any) {
-      setError(err.message ?? "Failed to complete session");
+    } catch (err) {
+      setError(friendlyError(err, "Couldn't complete the session. Try again."));
     } finally {
       setCompleting(false);
     }
@@ -519,8 +618,8 @@ export default function SessionPage() {
       }
       await loadData();
       setRevealing(true);
-    } catch (err: any) {
-      setError(err.message ?? "Failed to randomize teams");
+    } catch (err) {
+      setError(friendlyError(err, "Couldn't form teams. Try again."));
     } finally {
       setRandomizing(false);
     }
@@ -533,6 +632,7 @@ export default function SessionPage() {
     : session.status === "locked"
     ? "Squads forming"
     : "Completed";
+  const sportGlyph = sportEmoji(session.sport ?? groupSport);
 
   return (
     <main className="min-h-screen bg-night p-6">
@@ -542,12 +642,15 @@ export default function SessionPage() {
           <SquadRevealOverlay
             teamA={teams.filter((t) => t.team === "A").map((t) => t.users?.name ?? "?")}
             teamB={teams.filter((t) => t.team === "B").map((t) => t.users?.name ?? "?")}
+            emoji={sportGlyph}
             onClose={() => setRevealing(false)}
           />
         )}
       </AnimatePresence>
       <div className="mx-auto max-w-md space-y-6">
-        <div>
+        {/* Shares a view-transition-name with the group page's hero card, so
+            navigating in reads as the card scaling up into this header. */}
+        <div style={{ viewTransitionName: "session-hero" }}>
           <Link
             href={`/groups/${groupId}`}
             className="font-mono text-[11px] uppercase tracking-widest text-chalk-dim hover:text-chalk"
@@ -559,7 +662,9 @@ export default function SessionPage() {
             {(session.status === "open" || isDayPoll) && (
               <span className="h-2 w-2 animate-pulse rounded-full bg-floodlight" />
             )}
-            <p className={eyebrowCls}>{statusLabel}</p>
+            <p className={eyebrowCls}>
+              {sportGlyph} {statusLabel}
+            </p>
           </div>
 
           <h1 className="mt-1 text-3xl font-bold tracking-tight text-chalk">
@@ -600,45 +705,98 @@ export default function SessionPage() {
             </p>
           )}
 
-          {!session.turfs && canManage && (
+          {canManage && session.status !== "completed" && (
             <div className="mt-2">
-              {!settingTurf ? (
+              {!editingSession ? (
                 <button
                   type="button"
-                  onClick={() => setSettingTurf(true)}
+                  onClick={openEdit}
                   className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
                 >
-                  + Set turf
+                  ✎ Edit session
                 </button>
               ) : (
-                <div className="flex items-center gap-2">
+                <div className="mt-2 space-y-3 rounded-xl border border-line bg-turf p-3">
+                  {!isDayPoll && (
+                    <div className="space-y-2">
+                      <input
+                        type="date"
+                        value={editDate}
+                        onClick={(e) => {
+                          try {
+                            e.currentTarget.showPicker?.();
+                          } catch {
+                            // Needs user activation; a click always has it, but stay defensive.
+                          }
+                        }}
+                        onChange={(e) => setEditDate(e.target.value)}
+                        className={`block w-full cursor-pointer ${inputCls}`}
+                      />
+                      <TimeRangeSelect
+                        start={editStart}
+                        end={editEnd}
+                        onStartChange={setEditStart}
+                        onEndChange={setEditEnd}
+                      />
+                    </div>
+                  )}
                   <select
-                    value={selectedTurf}
-                    onChange={(e) => setSelectedTurf(e.target.value)}
-                    className={inputCls}
+                    value={editTurfId}
+                    onChange={(e) => setEditTurfId(e.target.value)}
+                    className={`block w-full ${inputCls}`}
                   >
-                    <option value="">Pick a turf</option>
-                    {turfOptions.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
+                    <option value="">Not yet decided</option>
+                    {(() => {
+                      const groupTurfs = groupTurfIds
+                        .map((id) => turfOptions.find((t) => t.id === id))
+                        .filter((t): t is TurfOption => Boolean(t));
+                      const otherTurfs = turfOptions.filter((t) => !groupTurfIds.includes(t.id));
+                      return (
+                        <>
+                          {groupTurfs.length > 0 && (
+                            <optgroup label="This group's turfs">
+                              {groupTurfs.map((t) => (
+                                <option key={t.id} value={t.id}>
+                                  {t.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                          {otherTurfs.length > 0 && (
+                            <optgroup label={groupTurfs.length > 0 ? "Other turfs" : "Turfs"}>
+                              {otherTurfs.map((t) => (
+                                <option key={t.id} value={t.id}>
+                                  {t.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </>
+                      );
+                    })()}
                   </select>
-                  <NeoPopButton
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleSetTurf}
-                    disabled={!selectedTurf}
-                  >
-                    Save
-                  </NeoPopButton>
-                  <button
-                    type="button"
-                    onClick={() => setSettingTurf(false)}
-                    className="font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
-                  >
-                    Cancel
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <p className={eyebrowCls}>Max capacity</p>
+                    <NumberStepper value={editMaxCapacity} onChange={setEditMaxCapacity} min={1} />
+                  </div>
+                  {editError && <p className="text-sm text-card-red">{editError}</p>}
+                  <div className="flex gap-2">
+                    <NeoPopButton
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleSaveEdit}
+                      loading={savingEdit}
+                    >
+                      {savingEdit ? "SAVING…" : "Save"}
+                    </NeoPopButton>
+                    <button
+                      type="button"
+                      onClick={() => setEditingSession(false)}
+                      className="font-mono text-xs uppercase text-chalk-dim hover:text-chalk"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -688,8 +846,8 @@ export default function SessionPage() {
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-night">
                     <div
-                      className="h-full rounded-full bg-floodlight transition-all duration-500"
-                      style={{ width: `${Math.min(100, pct)}%` }}
+                      className="h-full w-full origin-left rounded-full bg-floodlight transition-transform duration-500 motion-reduce:transition-none"
+                      style={{ transform: `scaleX(${Math.min(1, pct / 100)})` }}
                     />
                   </div>
                   <p className="font-mono text-[11px] uppercase tracking-wider text-chalk-dim">
@@ -719,7 +877,12 @@ export default function SessionPage() {
                     </option>
                   ))}
                 </select>
-                <NeoPopButton className="w-full" onClick={handleFinalizeDay} disabled={finalizing}>
+                <NeoPopButton
+                  className="w-full"
+                  onClick={handleFinalizeDay}
+                  loading={finalizing}
+                  spinner={sportGlyph}
+                >
                   {finalizing ? "LOCKING IN…" : "LOCK IN THIS DAY"}
                 </NeoPopButton>
               </div>
@@ -747,8 +910,8 @@ export default function SessionPage() {
             </div>
             <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-night">
               <div
-                className="h-full rounded-full bg-floodlight transition-all duration-500"
-                style={{ width: `${Math.min(100, (headcount / session.max_capacity) * 100)}%` }}
+                className="h-full w-full origin-left rounded-full bg-floodlight transition-transform duration-500 motion-reduce:transition-none"
+                style={{ transform: `scaleX(${Math.min(1, headcount / session.max_capacity)})` }}
               />
             </div>
           </div>
@@ -772,20 +935,8 @@ export default function SessionPage() {
             </p>
 
             <div className="flex items-center gap-3">
-              <label htmlFor="guests" className={eyebrowCls}>
-                Guests
-              </label>
-              <input
-                id="guests"
-                type="number"
-                min={0}
-                value={guestCountInput}
-                onChange={(e) => setGuestCountInput(e.target.value)}
-                onBlur={() => {
-                  if (guestCountInput.trim() === "") setGuestCountInput("0");
-                }}
-                className={`w-16 ${inputCls}`}
-              />
+              <p className={eyebrowCls}>Guests</p>
+              <NumberStepper value={guestCountInput} onChange={setGuestCountInput} min={0} />
             </div>
 
             {guestCountNum > 0 && (
@@ -807,17 +958,27 @@ export default function SessionPage() {
               <NeoPopButton
                 className="flex-1"
                 onClick={(e) => castVote(true, e)}
-                disabled={voting}
+                loading={voteAction === "in"}
+                spinner={sportGlyph}
+                disabled={voteAction !== null}
               >
-                {myStatus === "confirmed" ? "YOU'RE IN ✓" : "I'M IN"}
+                {voteAction === "in"
+                  ? myStatus === "confirmed"
+                    ? "UPDATING…"
+                    : "LOCKING YOU IN…"
+                  : myStatus === "confirmed"
+                  ? "YOU'RE IN ✓"
+                  : "I'M IN"}
               </NeoPopButton>
               <NeoPopButton
                 variant="secondary"
                 className="flex-1"
                 onClick={() => castVote(false)}
-                disabled={voting}
+                loading={voteAction === "out"}
+                spinner={sportGlyph}
+                disabled={voteAction !== null}
               >
-                I'M OUT
+                {voteAction === "out" ? "DROPPING…" : "I'M OUT"}
               </NeoPopButton>
             </div>
 
@@ -880,6 +1041,48 @@ export default function SessionPage() {
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {!isDayPoll && session.status === "open" && outVoters.length > 0 && (
+          <div className="space-y-2">
+            <p className={eyebrowCls}>
+              Out · {outVoters.length}
+              <span className="ml-2 normal-case tracking-normal text-chalk-dim/60">
+                already answered — no need to ask
+              </span>
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {outVoters.map((v) => (
+                <span
+                  key={v.user_id}
+                  className="rounded-full border border-card-red/25 bg-card-red/5 px-2.5 py-1 text-xs text-chalk-dim"
+                >
+                  {v.users?.name} <span className="text-card-red/70">✕</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!isDayPoll && session.status === "open" && yetToVote.length > 0 && (
+          <div className="space-y-2">
+            <p className={eyebrowCls}>
+              Yet to vote · {yetToVote.length}
+              <span className="ml-2 normal-case tracking-normal text-chalk-dim/60">
+                these are the ones to nudge
+              </span>
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {yetToVote.map((m) => (
+                <span
+                  key={m.user_id}
+                  className="rounded-full border border-line px-2.5 py-1 text-xs text-chalk-dim"
+                >
+                  {m.users?.name}
+                </span>
+              ))}
+            </div>
           </div>
         )}
 
@@ -950,7 +1153,8 @@ export default function SessionPage() {
                 <NeoPopButton
                   className="w-full"
                   onClick={handleRandomizeTeams}
-                  disabled={randomizing}
+                  loading={randomizing}
+                  spinner={sportGlyph}
                 >
                   {randomizing ? "FORMING…" : "FORM TEAMS"}
                 </NeoPopButton>
@@ -997,7 +1201,7 @@ export default function SessionPage() {
                   placeholder="e.g. 150"
                   value={costPerHeadInput}
                   onChange={(e) => setCostPerHeadInput(e.target.value)}
-                  className={`flex-1 ${inputCls}`}
+                  className={`no-spinner flex-1 ${inputCls}`}
                 />
                 <NeoPopButton variant="secondary" size="sm" onClick={handleSetCostPerHead}>
                   Save
@@ -1074,8 +1278,8 @@ export default function SessionPage() {
                 )}
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-night">
                   <div
-                    className="h-full rounded-full bg-floodlight transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
-                    style={{ width: `${Math.min(100, collectPct)}%` }}
+                    className="h-full w-full origin-left rounded-full bg-floodlight transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+                    style={{ transform: `scaleX(${Math.min(1, collectPct / 100)})` }}
                   />
                 </div>
               </div>
@@ -1218,7 +1422,8 @@ export default function SessionPage() {
             variant={teams.length === 0 ? "secondary" : "primary"}
             className="w-full"
             onClick={handleMarkComplete}
-            disabled={completing}
+            loading={completing}
+            spinner={sportGlyph}
           >
             {completing ? "COMPLETING…" : "MARK SESSION COMPLETE"}
           </NeoPopButton>

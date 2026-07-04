@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Routes accessible without a session
-const PUBLIC_PATHS = ["/login", "/verify", "/invite"];
+// Routes accessible without a session. /api/invite is the public group
+// preview a logged-out link recipient loads before signing in — the join
+// endpoint under it still enforces auth itself via the Bearer token.
+const PUBLIC_PATHS = ["/login", "/verify", "/invite", "/api/invite"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

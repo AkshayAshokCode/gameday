@@ -4,11 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { NeoPopButton } from "@/components/NeoPopButton";
+import { friendlyError } from "@/lib/errors";
+import { SPORTS } from "@/lib/sports";
 
 export default function NewGroupPage() {
   const router = useRouter();
   const { accessToken } = useAuth();
   const [name, setName] = useState("");
+  const [sport, setSport] = useState("football");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
@@ -23,7 +26,7 @@ export default function NewGroupPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, sport }),
       });
 
       if (!res.ok) {
@@ -32,8 +35,8 @@ export default function NewGroupPage() {
       }
 
       router.replace("/");
-    } catch (err: any) {
-      setError(err.message ?? "Failed to create group");
+    } catch (err) {
+      setError(friendlyError(err, "Couldn't create the group. Try again."));
     } finally {
       setCreating(false);
     }
@@ -68,9 +71,36 @@ export default function NewGroupPage() {
             />
           </div>
 
+          <div>
+            <p className="block font-mono text-[11px] uppercase tracking-widest text-chalk-dim">
+              Sport
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {SPORTS.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setSport(s.id)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    sport === s.id
+                      ? "bg-floodlight text-night"
+                      : "border border-line text-chalk-dim hover:text-chalk"
+                  }`}
+                >
+                  {s.emoji} {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {error && <p className="text-sm text-card-red">{error}</p>}
 
-          <NeoPopButton type="submit" className="w-full" disabled={creating || !name.trim()}>
+          <NeoPopButton
+            type="submit"
+            className="w-full"
+            loading={creating}
+            disabled={!name.trim()}
+          >
             {creating ? "CREATING…" : "CREATE GROUP"}
           </NeoPopButton>
 

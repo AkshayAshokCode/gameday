@@ -1,29 +1,26 @@
 "use client";
 
-import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { MotionConfig } from "motion/react";
+import * as React from "react";
+import type { ComponentType, ReactNode } from "react";
 
-// Every route change gets a quick fade + slide instead of an instant, jarring
-// swap. Keyed by pathname so AnimatePresence knows when to run exit/enter.
+// Page-to-page navigation runs through the browser's View Transitions API
+// (Next.js experimental flag): default cross-fade everywhere, plus true
+// shared-element morphs wherever two routes give an element the same
+// view-transition-name (e.g. the hero session card → session detail header).
+// unstable_ViewTransition ships in Next's bundled React canary but isn't in
+// @types/react yet, hence the runtime lookup with a plain-fragment fallback.
 // MotionConfig reducedMotion="user" makes every motion animation in the app
-// (ceremonies included) collapse to opacity-only under prefers-reduced-motion.
-export function PageTransition({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
+// (ceremonies included) collapse to opacity-only under prefers-reduced-motion;
+// the view-transition equivalent lives in globals.css.
+const ViewTransition: ComponentType<{ children: ReactNode }> =
+  (React as unknown as { unstable_ViewTransition?: ComponentType<{ children: ReactNode }> })
+    .unstable_ViewTransition ?? (({ children }) => <>{children}</>);
 
+export function PageTransition({ children }: { children: ReactNode }) {
   return (
     <MotionConfig reducedMotion="user">
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.div
-          key={pathname}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.18, ease: "easeInOut" }}
-        >
-          {children}
-        </motion.div>
-      </AnimatePresence>
+      <ViewTransition>{children}</ViewTransition>
     </MotionConfig>
   );
 }

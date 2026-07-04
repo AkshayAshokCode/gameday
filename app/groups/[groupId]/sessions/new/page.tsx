@@ -5,6 +5,10 @@ import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth, useSupabase } from "@/lib/auth-context";
 import { NeoPopButton } from "@/components/NeoPopButton";
+import { NumberStepper } from "@/components/NumberStepper";
+import { TimeRangeSelect } from "@/components/TimeRangeSelect";
+import { friendlyError } from "@/lib/errors";
+import { SPORTS } from "@/lib/sports";
 import type { Database } from "@/lib/supabase/types";
 
 // Leaflet touches window/document directly, so it can't run during SSR.
@@ -12,87 +16,17 @@ const TurfLocationPicker = dynamic(() => import("@/components/TurfLocationPicker
 
 type Turf = Database["public"]["Tables"]["turfs"]["Row"];
 
-// Turf bookings run in half-hour slots, not arbitrary minutes — 6:00 AM to
-// 11:30 PM covers realistic game times.
-const TIME_SLOTS = Array.from({ length: 36 }, (_, i) => {
-  const totalMinutes = 6 * 60 + i * 30;
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-});
-
-function formatTimeSlot(slot: string) {
-  const [h, m] = slot.split(":").map(Number);
-  const period = h >= 12 ? "PM" : "AM";
-  const hour12 = h % 12 === 0 ? 12 : h % 12;
-  return `${hour12}:${String(m).padStart(2, "0")} ${period}`;
-}
-
-// Start + end slot pickers for a booking range (e.g. 9:00 AM – 10:00 AM).
-// Picking a start auto-suggests a 1-hour end (adjustable), and the end list
-// only offers slots after the chosen start so an invalid range can't be built.
-function TimeRangeSelect({
-  start,
-  end,
-  onStartChange,
-  onEndChange,
-}: {
-  start: string;
-  end: string;
-  onStartChange: (v: string) => void;
-  onEndChange: (v: string) => void;
-}) {
-  const endOptions = TIME_SLOTS.filter((s) => s > start);
-
-  function handleStartChange(v: string) {
-    onStartChange(v);
-    if (!end || end <= v) {
-      const defaultEnd = TIME_SLOTS[TIME_SLOTS.indexOf(v) + 2]; // +1 hour
-      onEndChange(defaultEnd ?? "");
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <select
-        required
-        value={start}
-        onChange={(e) => handleStartChange(e.target.value)}
-        className="flex-1 rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
-      >
-        <option value="">Start</option>
-        {TIME_SLOTS.map((slot) => (
-          <option key={slot} value={slot}>
-            {formatTimeSlot(slot)}
-          </option>
-        ))}
-      </select>
-      <span className="font-mono text-xs text-chalk-dim">to</span>
-      <select
-        required
-        disabled={!start}
-        value={end}
-        onChange={(e) => onEndChange(e.target.value)}
-        className="flex-1 rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none disabled:opacity-50"
-      >
-        <option value="">End</option>
-        {endOptions.map((slot) => (
-          <option key={slot} value={slot}>
-            {formatTimeSlot(slot)}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
 export default function NewSessionPage() {
   const { groupId } = useParams<{ groupId: string }>();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const supabase = useSupabase();
 
   const [turfs, setTurfs] = useState<Turf[]>([]);
+  // Turf ids this group has actually played at, most recent first — these
+  // surface as the primary tier in the picker (turfs are global by design,
+  // but a group almost always books the same one every week).
+  const [groupTurfIds, setGroupTurfIds] = useState<string[]>([]);
   const [turfId, setTurfId] = useState("");
   const [addingTurf, setAddingTurf] = useState(false);
   const [newTurfName, setNewTurfName] = useState("");
@@ -100,6 +34,7 @@ export default function NewSessionPage() {
   const [newTurfLat, setNewTurfLat] = useState<number | null>(null);
   const [newTurfLng, setNewTurfLng] = useState<number | null>(null);
 
+  const [sport, setSport] = useState("");
   const [dateMode, setDateMode] = useState<"single" | "poll">("single");
   const [singleDate, setSingleDate] = useState("");
   const [singleStart, setSingleStart] = useState("");
@@ -115,16 +50,64 @@ export default function NewSessionPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    supabase
-      .from("turfs")
-      .select("*")
-      .order("name")
-      .then(({ data }) => {
-        setTurfs(data ?? []);
-        if (!data || data.length === 0) setAddingTurf(true);
-      });
+    if (!isLoading && !user) router.replace("/login");
+  }, [user, isLoading, router]);
+
+  useEffect(() => {
+    // Without this, the effect fires on first mount using an unauthenticated
+    // client (the token hasn't loaded from storage yet) — RLS blocks the
+    // .single() group query with a 406, which then "fixes itself" once
+    // useSupabase() re-memoizes on the real token. Waiting avoids the
+    // failed round-trip and the console error entirely.
+    if (!user) return;
+
+    (async () => {
+      const [turfsRes, usedRes, savedRes, groupRes] = await Promise.all([
+        supabase.from("turfs").select("*").order("name"),
+        supabase
+          .from("sessions")
+          .select("turf_id, created_at")
+          .eq("group_id", groupId)
+          .not("turf_id", "is", null)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("group_turfs")
+          .select("turf_id")
+          .eq("group_id", groupId)
+          .order("created_at", { ascending: false }),
+        supabase.from("groups").select("sport").eq("id", groupId).single(),
+      ]);
+
+      // Sessions default to the group's sport; still switchable per session.
+      setSport((prev) => prev || groupRes.data?.sport || "football");
+
+      const list = turfsRes.data ?? [];
+      setTurfs(list);
+
+      // Group tier = recently used ∪ explicitly saved (history first).
+      const seen = new Set<string>();
+      const ordered: string[] = [];
+      for (const s of usedRes.data ?? []) {
+        if (s.turf_id && !seen.has(s.turf_id)) {
+          seen.add(s.turf_id);
+          ordered.push(s.turf_id);
+        }
+      }
+      for (const g of savedRes.data ?? []) {
+        if (!seen.has(g.turf_id)) {
+          seen.add(g.turf_id);
+          ordered.push(g.turf_id);
+        }
+      }
+      setGroupTurfIds(ordered);
+
+      if (list.length === 0) setAddingTurf(true);
+      // Default to the group's most recent turf — the weekly ritual is
+      // usually the same booking, so don't make the organizer re-pick.
+      else if (ordered.length > 0) setTurfId((prev) => prev || ordered[0]);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase]);
+  }, [user, supabase, groupId]);
 
   async function handleAddTurf() {
     if (!newTurfName.trim()) return;
@@ -146,13 +129,31 @@ export default function NewSessionPage() {
       return;
     }
 
+    // A turf added while organizing is this group's turf — save the link so
+    // it lands in the primary tier next time (best-effort).
+    await supabase
+      .from("group_turfs")
+      .insert({ group_id: groupId, turf_id: data.id, added_by: user?.id });
+
     setTurfs((prev) => [...prev, data]);
+    setGroupTurfIds((prev) => [data.id, ...prev]);
     setTurfId(data.id);
     setAddingTurf(false);
     setNewTurfName("");
     setNewTurfAddress("");
     setNewTurfLat(null);
     setNewTurfLng(null);
+  }
+
+  // Chrome only opens the calendar when the tiny indicator icon is clicked;
+  // this makes the whole field do it. Safari <16 lacks showPicker — the icon
+  // still works there.
+  function openPicker(e: React.MouseEvent<HTMLInputElement>) {
+    try {
+      e.currentTarget.showPicker?.();
+    } catch {
+      // Needs user activation; a click always has it, but stay defensive.
+    }
   }
 
   function updateDayOption(index: number, value: string) {
@@ -192,6 +193,7 @@ export default function NewSessionPage() {
             dateMode === "single" ? new Date(`${singleDate}T${singleEnd}`).toISOString() : null,
           max_capacity: Number(maxCapacityInput) || 0,
           status: dateMode === "poll" ? "proposing" : "open",
+          sport: sport || null,
         })
         .select()
         .single();
@@ -210,12 +212,14 @@ export default function NewSessionPage() {
       }
 
       router.replace(`/groups/${groupId}/sessions/${data.id}`);
-    } catch (err: any) {
-      setError(err.message ?? "Failed to create session");
+    } catch (err) {
+      setError(friendlyError(err, "Couldn't create the session. Try again."));
     } finally {
       setSaving(false);
     }
   }
+
+  if (isLoading || !user) return null;
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-night px-4 py-8">
@@ -229,22 +233,63 @@ export default function NewSessionPage() {
 
         <form onSubmit={handleCreateSession} className="space-y-4">
           <div>
+            <p className="block font-mono text-[11px] uppercase tracking-widest text-chalk-dim">
+              Sport
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {SPORTS.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setSport(s.id)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    sport === s.id
+                      ? "bg-floodlight text-night"
+                      : "border border-line text-chalk-dim hover:text-chalk"
+                  }`}
+                >
+                  {s.emoji} {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
             <label className="block font-mono text-[11px] uppercase tracking-widest text-chalk-dim">Turf</label>
 
-            {turfs.length > 0 && !addingTurf && (
-              <select
-                value={turfId}
-                onChange={(e) => setTurfId(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
-              >
-                <option value="">Not yet decided</option>
-                {turfs.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            )}
+            {turfs.length > 0 && !addingTurf && (() => {
+              const groupTurfs = groupTurfIds
+                .map((id) => turfs.find((t) => t.id === id))
+                .filter((t): t is Turf => Boolean(t));
+              const otherTurfs = turfs.filter((t) => !groupTurfIds.includes(t.id));
+              return (
+                <select
+                  value={turfId}
+                  onChange={(e) => setTurfId(e.target.value)}
+                  className="mt-1 block w-full rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
+                >
+                  <option value="">Not yet decided</option>
+                  {groupTurfs.length > 0 && (
+                    <optgroup label="This group's turfs">
+                      {groupTurfs.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {otherTurfs.length > 0 && (
+                    <optgroup label={groupTurfs.length > 0 ? "Other turfs" : "Turfs"}>
+                      {otherTurfs.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              );
+            })()}
 
             {!addingTurf ? (
               <button
@@ -333,8 +378,9 @@ export default function NewSessionPage() {
                   type="date"
                   required
                   value={singleDate}
+                  onClick={openPicker}
                   onChange={(e) => setSingleDate(e.target.value)}
-                  className="block w-full rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
+                  className="block w-full cursor-pointer rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
                 />
                 <TimeRangeSelect
                   start={singleStart}
@@ -351,8 +397,9 @@ export default function NewSessionPage() {
                       key={i}
                       type="date"
                       value={d}
+                      onClick={openPicker}
                       onChange={(e) => updateDayOption(i, e.target.value)}
-                      className="block w-full rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
+                      className="block w-full cursor-pointer rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
                     />
                   ))}
                   <div className="flex gap-3">
@@ -398,26 +445,20 @@ export default function NewSessionPage() {
           </div>
 
           <div>
-            <label htmlFor="maxCapacity" className="block font-mono text-[11px] uppercase tracking-widest text-chalk-dim">
+            <p className="block font-mono text-[11px] uppercase tracking-widest text-chalk-dim">
               Max capacity
-            </label>
-            <input
-              id="maxCapacity"
-              type="number"
-              min={1}
-              required
+            </p>
+            <NumberStepper
               value={maxCapacityInput}
-              onChange={(e) => setMaxCapacityInput(e.target.value)}
-              onBlur={() => {
-                if (maxCapacityInput.trim() === "") setMaxCapacityInput("0");
-              }}
-              className="mt-1 block w-full rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
+              onChange={setMaxCapacityInput}
+              min={1}
+              className="mt-1.5"
             />
           </div>
 
           {error && <p className="text-sm text-card-red">{error}</p>}
 
-          <NeoPopButton type="submit" className="w-full" disabled={saving}>
+          <NeoPopButton type="submit" className="w-full" loading={saving}>
             {saving ? "CREATING…" : "CREATE SESSION"}
           </NeoPopButton>
 

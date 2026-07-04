@@ -5,9 +5,11 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth, useSupabase } from "@/lib/auth-context";
 import { AvatarRail } from "@/components/AvatarRail";
+import { CopyInviteLink } from "@/components/CopyInviteLink";
 import { CountUp } from "@/components/CountUp";
 import { NeoPopButton } from "@/components/NeoPopButton";
 import { StreakMilestoneOverlay, useStreakMilestone } from "@/components/StreakMilestone";
+import { sportEmoji } from "@/lib/sports";
 import type { Database } from "@/lib/supabase/types";
 
 type Group = Database["public"]["Tables"]["groups"]["Row"];
@@ -188,11 +190,9 @@ export default function GroupPage() {
               ← Home
             </Link>
             <h1 className="mt-1 text-3xl font-bold tracking-tight text-chalk">
-              {group.name}
+              {sportEmoji(group.sport)} {group.name}
             </h1>
-            <p className="mt-1 font-mono text-[11px] uppercase tracking-wider text-chalk-dim">
-              Invite · /invite/{group.invite_code}
-            </p>
+            <CopyInviteLink code={group.invite_code} className="mt-2" />
           </div>
           {myStreak > 0 && (
             <div className="rounded-full border border-line bg-turf px-3 py-1.5 font-mono text-xs text-chalk">
@@ -202,7 +202,10 @@ export default function GroupPage() {
         </div>
 
         {hero ? (
-          <div className="rounded-2xl border border-line bg-turf p-6 space-y-5">
+          <div
+            style={{ viewTransitionName: "session-hero" }}
+            className="rounded-2xl border border-line bg-turf p-6 space-y-5"
+          >
             <div className="flex items-center gap-2">
               {(hero.status === "open" || hero.status === "proposing") && (
                 <span className="h-2 w-2 animate-pulse rounded-full bg-floodlight" />
@@ -238,9 +241,9 @@ export default function GroupPage() {
                 </p>
                 <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-night">
                   <div
-                    className="h-full rounded-full bg-floodlight transition-all duration-500"
+                    className="h-full w-full origin-left rounded-full bg-floodlight transition-transform duration-500 motion-reduce:transition-none"
                     style={{
-                      width: `${Math.min(100, (headcount / hero.max_capacity) * 100)}%`,
+                      transform: `scaleX(${Math.min(1, headcount / hero.max_capacity)})`,
                     }}
                   />
                 </div>
@@ -272,12 +275,20 @@ export default function GroupPage() {
         )}
 
         <div className="flex items-center justify-between">
-          <Link
-            href={`/groups/${groupId}/leaderboard`}
-            className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
-          >
-            🏆 Leaderboard
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              href={`/groups/${groupId}/leaderboard`}
+              className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
+            >
+              🏆 Leaderboard
+            </Link>
+            <Link
+              href={`/groups/${groupId}/turfs`}
+              className="font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
+            >
+              🏟️ Turfs
+            </Link>
+          </div>
           {hero && (
             <Link
               href={`/groups/${groupId}/sessions/new`}
