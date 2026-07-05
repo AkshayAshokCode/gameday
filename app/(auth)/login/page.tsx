@@ -43,6 +43,13 @@ export default function LoginPage() {
       const data = await res.json();
       setSession(data.accessToken, data.user);
 
+      // Brand-new account: confirm the name Google gave us before landing.
+      // post_login_redirect stays stashed — /welcome consumes it after.
+      if (data.isNew) {
+        router.replace("/welcome");
+        return;
+      }
+
       const redirectTo = sessionStorage.getItem("post_login_redirect");
       sessionStorage.removeItem("post_login_redirect");
       router.replace(redirectTo || "/");
@@ -59,7 +66,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-night px-4">
+    <main className="relative min-h-screen flex items-center justify-center bg-night px-4">
       <div className="w-full max-w-sm space-y-8">
         <div className="text-center">
           <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-chalk-dim">
@@ -82,6 +89,17 @@ export default function LoginPage() {
           {error && <p className="text-sm text-card-red">{error}</p>}
         </div>
       </div>
+
+      {/* Quiet portfolio credit — the login page is the app's only public
+          face, so this is the one place the repo link earns its pixels. */}
+      <a
+        href="https://github.com/AkshayAshokCode/gameday"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="absolute bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap px-3 py-2 font-mono text-[11px] uppercase tracking-widest text-chalk-dim/60 transition-colors hover:text-chalk"
+      >
+        Built in the open · GitHub ↗
+      </a>
     </main>
   );
 }

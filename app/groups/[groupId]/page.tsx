@@ -7,6 +7,7 @@ import { useAuth, useSupabase } from "@/lib/auth-context";
 import { AvatarRail } from "@/components/AvatarRail";
 import { CopyInviteLink } from "@/components/CopyInviteLink";
 import { CountUp } from "@/components/CountUp";
+import { ProfileChip } from "@/components/ProfileChip";
 import { NeoPopButton } from "@/components/NeoPopButton";
 import { StreakMilestoneOverlay, useStreakMilestone } from "@/components/StreakMilestone";
 import { sportEmoji } from "@/lib/sports";
@@ -194,17 +195,25 @@ export default function GroupPage() {
             </h1>
             <CopyInviteLink code={group.invite_code} className="mt-2" />
           </div>
-          {myStreak > 0 && (
-            <div className="rounded-full border border-line bg-turf px-3 py-1.5 font-mono text-xs text-chalk">
-              🔥 {myStreak}
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {myStreak > 0 && (
+              <div className="rounded-full border border-line bg-turf px-3 py-1.5 font-mono text-xs text-chalk">
+                🔥 {myStreak}
+              </div>
+            )}
+            <ProfileChip />
+          </div>
         </div>
 
         {hero ? (
+          // The whole card navigates, not just the CTA — on mobile the card
+          // *is* the session, and a dead tap anywhere on it feels broken. The
+          // button stays for affordance; its click just bubbles to the same
+          // destination.
           <div
             style={{ viewTransitionName: "session-hero" }}
-            className="rounded-2xl border border-line bg-turf p-6 space-y-5"
+            onClick={() => router.push(`/groups/${groupId}/sessions/${hero.id}`)}
+            className="cursor-pointer rounded-2xl border border-line bg-turf p-6 space-y-5 transition-colors hover:border-chalk-dim"
           >
             <div className="flex items-center gap-2">
               {(hero.status === "open" || hero.status === "proposing") && (
@@ -254,12 +263,9 @@ export default function GroupPage() {
               <AvatarRail names={confirmed.map((v) => v.users?.name ?? "?")} />
             )}
 
-            <NeoPopButton
-              className="w-full"
-              onClick={() => router.push(`/groups/${groupId}/sessions/${hero.id}`)}
-            >
-              {heroCta}
-            </NeoPopButton>
+            {/* Navigation happens on the card itself; the button is the
+                affordance and its click simply bubbles up. */}
+            <NeoPopButton className="w-full">{heroCta}</NeoPopButton>
           </div>
         ) : (
           <div className="rounded-2xl border border-line bg-turf p-6 text-center space-y-4">

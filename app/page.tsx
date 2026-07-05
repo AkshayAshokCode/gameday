@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth, useSupabase } from "@/lib/auth-context";
 import { CopyInviteLink } from "@/components/CopyInviteLink";
+import { ProfileChip } from "@/components/ProfileChip";
 import { NeoPopButton } from "@/components/NeoPopButton";
 import { sportEmoji } from "@/lib/sports";
 import type { Database } from "@/lib/supabase/types";
@@ -12,7 +13,7 @@ import type { Database } from "@/lib/supabase/types";
 type Group = Database["public"]["Tables"]["groups"]["Row"];
 
 export default function HomePage() {
-  const { user, isLoading, signOut } = useAuth();
+  const { user, isLoading } = useAuth();
   const supabase = useSupabase();
   const router = useRouter();
   const [groups, setGroups] = useState<Group[]>([]);
@@ -47,23 +48,9 @@ export default function HomePage() {
               {user.name}
             </h1>
           </div>
-          <div className="flex flex-col items-end">
-            {/* Real padding, not just a bigger gap — on mobile the tap target
-                needs to be larger than the visible text, or a thumb reliably
-                fat-fingers the wrong one of two stacked links this close. */}
-            <Link
-              href="/profile"
-              className="px-2 py-2.5 font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-chalk"
-            >
-              Profile
-            </Link>
-            <button
-              onClick={signOut}
-              className="px-2 py-2.5 font-mono text-xs uppercase tracking-wider text-chalk-dim hover:text-card-red"
-            >
-              Sign out
-            </button>
-          </div>
+          {/* Sign out lives on the profile page now — one consistent avatar
+              chip in the top-right corner everywhere. */}
+          <ProfileChip className="mt-1" />
         </div>
 
         <div className="space-y-3">

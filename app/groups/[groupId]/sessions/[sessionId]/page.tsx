@@ -11,6 +11,7 @@ import { CountUp } from "@/components/CountUp";
 import { HoldToConfirm } from "@/components/HoldToConfirm";
 import { NeoPopButton } from "@/components/NeoPopButton";
 import { NumberStepper } from "@/components/NumberStepper";
+import { ProfileChip } from "@/components/ProfileChip";
 import { SquadRevealOverlay } from "@/components/SquadReveal";
 import { TimeRangeSelect } from "@/components/TimeRangeSelect";
 import { TurfSelect } from "@/components/TurfSelect";
@@ -31,6 +32,7 @@ interface SessionDetail {
   cost_per_head: number | null;
   sport: string | null;
   turfs: { name: string; lat: number | null; lng: number | null } | null;
+  organizer: { name: string } | null;
 }
 
 interface TurfOption {
@@ -177,7 +179,9 @@ export default function SessionPage() {
       supabase
         .from("sessions")
         .select(
-          "id, group_id, organizer_id, payment_collector_id, turf_id, scheduled_at, ends_at, max_capacity, status, cost_per_head, sport, turfs(name, lat, lng)"
+          // sessions has two FKs to users (organizer + collector), so the
+          // organizer embed must name its constraint or PostgREST returns 300.
+          "id, group_id, organizer_id, payment_collector_id, turf_id, scheduled_at, ends_at, max_capacity, status, cost_per_head, sport, turfs(name, lat, lng), organizer:users!sessions_organizer_id_fkey(name)"
         )
         .eq("id", sessionId)
         .single(),
@@ -698,12 +702,15 @@ export default function SessionPage() {
         {/* Shares a view-transition-name with the group page's hero card, so
             navigating in reads as the card scaling up into this header. */}
         <div style={{ viewTransitionName: "session-hero" }}>
-          <Link
-            href={`/groups/${groupId}`}
-            className="font-mono text-[11px] uppercase tracking-widest text-chalk-dim hover:text-chalk"
-          >
-            ← Back
-          </Link>
+          <div className="flex items-center justify-between">
+            <Link
+              href={`/groups/${groupId}`}
+              className="font-mono text-[11px] uppercase tracking-widest text-chalk-dim hover:text-chalk"
+            >
+              ← Back
+            </Link>
+            <ProfileChip />
+          </div>
 
           <div className="mt-3 flex items-center gap-2">
             {(session.status === "open" || isDayPoll) && (
@@ -748,6 +755,11 @@ export default function SessionPage() {
           ) : (
             <p className="mt-1 font-mono text-xs uppercase tracking-wider text-chalk-dim">
               Turf: not yet decided
+            </p>
+          )}
+          {session.organizer && (
+            <p className="mt-1 font-mono text-[11px] uppercase tracking-wider text-chalk-dim">
+              Organized by <span className="text-chalk">{session.organizer.name}</span>
             </p>
           )}
 

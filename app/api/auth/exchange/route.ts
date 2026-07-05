@@ -37,11 +37,15 @@ export async function POST(req: NextRequest) {
 
     let userId: string;
     let userRecord: { id: string; name: string; phone: string | null; avatar_url: string | null };
+    // First sign-in ever? The client routes brand-new users through /welcome
+    // so they can confirm/adjust the name Google supplied.
+    let isNew = false;
 
     if (existing) {
       userId = existing.id;
       userRecord = existing;
     } else {
+      isNew = true;
       // Google Sign-In already supplies a name, so only the phone-OTP path
       // (no `decoded.name`) ever needs the client's separate name step —
       // returning users are never asked either way. (This is only reachable
@@ -89,7 +93,7 @@ export async function POST(req: NextRequest) {
       { algorithm: "HS256" }
     );
 
-    return NextResponse.json({ accessToken, user: userRecord });
+    return NextResponse.json({ accessToken, user: userRecord, isNew });
   } catch (err) {
     console.error("[auth/exchange]", err);
     return NextResponse.json(

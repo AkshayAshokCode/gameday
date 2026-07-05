@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth, useSupabase } from "@/lib/auth-context";
+import { friendlyError } from "@/lib/errors";
 import { CountUp } from "@/components/CountUp";
 import { StreakMilestoneOverlay, useStreakMilestone } from "@/components/StreakMilestone";
 
@@ -36,10 +37,14 @@ function initials(name: string) {
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, isLoading } = useAuth();
+  const { user, accessToken, isLoading, setSession, signOut } = useAuth();
   const supabase = useSupabase();
   const [groupStats, setGroupStats] = useState<GroupStats[]>([]);
   const [loading, setLoading] = useState(true);
+  const [nameInput, setNameInput] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  const [nameSaved, setNameSaved] = useState(false);
+  const [nameError, setNameError] = useState("");
   const [upiIdInput, setUpiIdInput] = useState("");
   const [savingUpi, setSavingUpi] = useState(false);
   const [upiSaved, setUpiSaved] = useState(false);
@@ -64,6 +69,7 @@ export default function ProfilePage() {
       supabase.from("users").select("upi_id").eq("id", user.id).single(),
     ]).then(([membershipsRes, attendanceRes, userRes]) => {
       setUpiIdInput(userRes.data?.upi_id ?? "");
+      setNameInput((prev) => prev || user.name);
 
       const memberships = (membershipsRes.data ?? []) as unknown as GroupMembership[];
       const records = (attendanceRes.data ?? []) as unknown as AttendanceWithSession[];
@@ -117,6 +123,24 @@ export default function ProfilePage() {
     if (!error) setUpiSaved(true);
   }
 
+  async function handleSaveName() {
+    const trimmed = nameInput.trim();
+    if (!trimmed) return;
+    setNameError("");
+    setSavingName(true);
+    setNameSaved(false);
+    const { error } = await supabase.from("users").update({ name: trimmed }).eq("id", user!.id);
+    setSavingName(false);
+    if (error) {
+      setNameError(friendlyError(error, "Couldn't save your name. Try again."));
+      return;
+    }
+    // Refresh the locally-stored session user so the header (and every other
+    // page) greets the new name without a re-login.
+    setSession(accessToken!, { ...user!, name: trimmed });
+    setNameSaved(true);
+  }
+
   if (isLoading || !user || loading) return null;
 
   const overallAttended = groupStats.reduce((sum, g) => sum + g.attended, 0);
@@ -134,8 +158,20 @@ export default function ProfilePage() {
 
         {/* The jersey: avatar top-center, games played as the biggest numeral on screen */}
         <div className="flex flex-col items-center text-center">
-          <span className="flex h-20 w-20 items-center justify-center rounded-full bg-turf-raised text-2xl font-bold text-chalk ring-2 ring-line">
-            {initials(user.name)}
+          <span className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-turf-raised text-2xl font-bold text-chalk ring-2 ring-line">
+            {user.avatar_url ? (
+              // no-referrer: Google's avatar CDN 403s requests carrying a
+              // cross-origin referrer, which silently blanks the image.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={user.avatar_url}
+                alt={user.name}
+                referrerPolicy="no-referrer"
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              initials(user.name)
+            )}
           </span>
           <h1 className="mt-3 text-2xl font-bold tracking-tight text-chalk">{user.name}</h1>
 
@@ -145,6 +181,42 @@ export default function ProfilePage() {
           <p className="text-8xl font-bold tracking-tighter text-chalk">
             <CountUp value={overallAttended} />
           </p>
+        </div>
+
+        <div className="rounded-xl border border-line bg-turf p-4 space-y-2">
+          <label
+            htmlFor="displayName"
+            className="block font-mono text-[11px] uppercase tracking-widest text-chalk-dim"
+          >
+            Your name
+          </label>
+          <p className="text-xs text-chalk-dim">
+            How you show up on rosters, squads, and payments.
+          </p>
+          <div className="flex gap-2">
+            <input
+              id="displayName"
+              type="text"
+              placeholder="e.g. Akshay"
+              value={nameInput}
+              onChange={(e) => {
+                setNameInput(e.target.value);
+                setNameSaved(false);
+              }}
+              className="flex-1 rounded-lg border border-line bg-night px-3 py-2 text-sm text-chalk placeholder:text-chalk-dim/50 focus:border-floodlight focus:outline-none"
+            />
+            <button
+              onClick={handleSaveName}
+              disabled={savingName || !nameInput.trim()}
+              className="rounded-lg border border-line bg-turf-raised px-4 py-2 text-sm font-semibold text-chalk transition-colors hover:border-chalk-dim disabled:opacity-50"
+            >
+              {savingName ? "Saving…" : "Save"}
+            </button>
+          </div>
+          {nameError && <p className="text-sm text-card-red">{nameError}</p>}
+          {nameSaved && (
+            <p className="font-mono text-[11px] uppercase tracking-wider text-floodlight">Saved ✓</p>
+          )}
         </div>
 
         <div className="rounded-xl border border-line bg-turf p-4 space-y-2">
@@ -215,6 +287,24 @@ export default function ProfilePage() {
             </ul>
           )}
         </div>
+
+        {/* Sign out lives here (not the home header) — it's a rare action,
+            and the profile page is where you'd look for it. */}
+        <button
+          onClick={signOut}
+          className="w-full py-3 text-center font-mono text-xs uppercase tracking-wider text-chalk-dim transition-colors hover:text-card-red"
+        >
+          Sign out
+        </button>
+
+        <a
+          href="https://github.com/AkshayAshokCode/gameday"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block w-full pb-2 text-center font-mono text-[11px] uppercase tracking-widest text-chalk-dim/50 transition-colors hover:text-chalk"
+        >
+          Built in the open · GitHub ↗
+        </a>
       </div>
     </main>
   );

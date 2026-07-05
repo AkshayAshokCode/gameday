@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth, useSupabase } from "@/lib/auth-context";
 import { friendlyError } from "@/lib/errors";
+import { ProfileChip } from "@/components/ProfileChip";
 
 // Leaflet touches window/document directly, so it can't run during SSR.
 const TurfLocationPicker = dynamic(() => import("@/components/TurfLocationPicker"), { ssr: false });
@@ -134,12 +135,15 @@ export default function GroupTurfsPage() {
     <main className="min-h-screen bg-night p-6">
       <div className="mx-auto max-w-md space-y-6">
         <div>
-          <Link
-            href={`/groups/${groupId}`}
-            className="font-mono text-[11px] uppercase tracking-widest text-chalk-dim hover:text-chalk"
-          >
-            ← {groupName || "Back"}
-          </Link>
+          <div className="flex items-center justify-between">
+            <Link
+              href={`/groups/${groupId}`}
+              className="font-mono text-[11px] uppercase tracking-widest text-chalk-dim hover:text-chalk"
+            >
+              ← {groupName || "Back"}
+            </Link>
+            <ProfileChip />
+          </div>
           <h1 className="mt-1 text-3xl font-bold tracking-tight text-chalk">Turfs</h1>
           <p className="mt-1 text-sm text-chalk-dim">
             Save the turfs your group plays at — they show first when creating a session.
