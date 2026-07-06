@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
+import { AnalyticsProvider } from "@/components/AnalyticsProvider";
 import { PageTransition } from "@/components/PageTransition";
 
 // "Floodlit" type system: Space Grotesk carries display numerals + all UI text;
@@ -34,6 +35,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <AuthProvider>
+          <AnalyticsProvider />
           <PageTransition>{children}</PageTransition>
         </AuthProvider>
       </body>

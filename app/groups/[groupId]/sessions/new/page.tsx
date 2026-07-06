@@ -9,6 +9,7 @@ import { NumberStepper } from "@/components/NumberStepper";
 import { TimeRangeSelect } from "@/components/TimeRangeSelect";
 import { TurfSelect } from "@/components/TurfSelect";
 import { friendlyError } from "@/lib/errors";
+import { track } from "@/lib/analytics";
 import { SPORTS } from "@/lib/sports";
 import type { Database } from "@/lib/supabase/types";
 
@@ -209,6 +210,7 @@ export default function NewSessionPage() {
         if (optionsError) throw new Error(optionsError.message);
       }
 
+      track("session_created", { mode: dateMode, sport: sport || null });
       router.replace(`/groups/${groupId}/sessions/${data.id}`);
     } catch (err) {
       setError(friendlyError(err, "Couldn't create the session. Try again."));

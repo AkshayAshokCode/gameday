@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useAuth } from "@/lib/auth-context";
 import { AvatarRail } from "@/components/AvatarRail";
 import { friendlyError } from "@/lib/errors";
+import { track } from "@/lib/analytics";
 import { NeoPopButton } from "@/components/NeoPopButton";
 
 // Ceremony 5 — joining a group. The invite link IS the growth mechanism, so
@@ -82,6 +83,7 @@ export default function InvitePage() {
         setMemberCount((c) => c + 1);
       }
       setJoined(true);
+      track("invite_joined");
     } catch (err) {
       setError(friendlyError(err, "Couldn't join right now. Try again."));
     } finally {

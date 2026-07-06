@@ -13,6 +13,7 @@ import {
 import { onAuthStateChanged } from "firebase/auth";
 import { firebaseAuth } from "@/lib/firebase";
 import { createBrowserClient } from "@/lib/supabase/client";
+import { resetAnalytics } from "@/lib/analytics";
 import type { Database } from "@/lib/supabase/types";
 
 type User = Database["public"]["Tables"]["users"]["Row"];
@@ -169,6 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function signOut() {
     clearSession();
+    resetAnalytics();
     // Also end the Firebase session — otherwise the silent refresh would
     // quietly log the user straight back in on the next visit.
     firebaseAuth.signOut().catch(() => {});

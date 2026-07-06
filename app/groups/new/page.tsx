@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { NeoPopButton } from "@/components/NeoPopButton";
 import { friendlyError } from "@/lib/errors";
+import { track } from "@/lib/analytics";
 import { SPORTS } from "@/lib/sports";
 
 export default function NewGroupPage() {
@@ -34,6 +35,7 @@ export default function NewGroupPage() {
         throw new Error(msg);
       }
 
+      track("group_created", { sport });
       router.replace("/");
     } catch (err) {
       setError(friendlyError(err, "Couldn't create the group. Try again."));

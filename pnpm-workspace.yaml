@@ -8,6 +8,8 @@ overrides:
   jwks-rsa: '3.2.2'
 allowBuilds:
   '@firebase/util': true
+  # core-js's postinstall is just a funding banner — no build needed.
+  core-js: false
   protobufjs: true
 ignoredBuiltDependencies:
   - sharp

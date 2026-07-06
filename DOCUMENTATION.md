@@ -386,6 +386,10 @@ See `.env.local.example` for the full annotated template.
 | `SUPABASE_JWT_SECRET` | server | Signs the minted auth JWTs (must match Supabase's legacy JWT secret) |
 | `NEXT_PUBLIC_FIREBASE_*` (4) | client | Firebase web app config |
 | `FIREBASE_ADMIN_*` (3) | server | Admin SDK service account (private key kept as one line with literal `\n`) |
+| `NEXT_PUBLIC_POSTHOG_KEY` | client | Optional — PostHog project key. **All analytics no-op when unset.** |
+| `NEXT_PUBLIC_POSTHOG_HOST` | client | Optional — only for EU-cloud PostHog projects (default: US cloud) |
+
+**Analytics** (`lib/analytics.ts` + `AnalyticsProvider` in the root layout): PostHog, gated entirely on the key being present. Pageviews auto-capture on SPA navigations; product events are explicit `track()` calls — `signed_in`, `group_created`, `invite_joined`, `session_created`, `vote_cast`, `day_finalized`, `poll_closed`, `poll_reopened`, `session_edited`, `teams_formed`, `session_completed`, `payment_marked`, `session_deleted`. Users are identified by app user id + name on sign-in and `reset()` on sign-out. Autocapture is off — events are intentional only.
 
 ---
 

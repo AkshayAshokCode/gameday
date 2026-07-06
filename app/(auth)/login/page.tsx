@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { firebaseAuth } from "@/lib/firebase";
+import { track } from "@/lib/analytics";
 import { useAuth } from "@/lib/auth-context";
 import { friendlyError } from "@/lib/errors";
 import { NeoPopButton } from "@/components/NeoPopButton";
@@ -42,6 +43,7 @@ export default function LoginPage() {
       }
       const data = await res.json();
       setSession(data.accessToken, data.user);
+      track("signed_in", { is_new: !!data.isNew });
 
       // Brand-new account: confirm the name Google gave us before landing.
       // post_login_redirect stays stashed — /welcome consumes it after.

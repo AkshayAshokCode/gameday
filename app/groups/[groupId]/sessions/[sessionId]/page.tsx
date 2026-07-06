@@ -17,6 +17,7 @@ import { TimeRangeSelect } from "@/components/TimeRangeSelect";
 import { TurfSelect } from "@/components/TurfSelect";
 import { useVoteCeremony } from "@/components/VoteCeremony";
 import { friendlyError } from "@/lib/errors";
+import { track } from "@/lib/analytics";
 import { sportEmoji } from "@/lib/sports";
 
 interface SessionDetail {
@@ -461,6 +462,7 @@ export default function SessionPage() {
         const { error: msg } = await res.json();
         throw new Error(msg);
       }
+      track("vote_cast", { voted_in: votedIn, guest_count: votedIn ? guestCountNum : 0 });
       await loadData();
     } catch (err) {
       setError(friendlyError(err, "Couldn't save your vote. Try again."));
@@ -492,7 +494,10 @@ export default function SessionPage() {
       .from("sessions")
       .update({ scheduled_at: winner.scheduled_at, ends_at: winner.ends_at, status: "open" })
       .eq("id", sessionId);
-    if (!updateError) await loadData();
+    if (!updateError) {
+      track("day_finalized");
+      await loadData();
+    }
     setFinalizing(false);
   }
 
@@ -540,6 +545,7 @@ export default function SessionPage() {
       };
       const { error: updateError } = await supabase.from("sessions").update(updates).eq("id", sessionId);
       if (updateError) throw new Error(updateError.message);
+      track("session_edited");
       setEditingSession(false);
       await loadData();
     } catch (err) {
@@ -554,7 +560,10 @@ export default function SessionPage() {
       .from("sessions")
       .update({ status: "locked" })
       .eq("id", sessionId);
-    if (!updateError) await loadData();
+    if (!updateError) {
+      track("poll_closed");
+      await loadData();
+    }
   }
 
   // Undo for an accidental close — only offered before teams are formed, since
@@ -565,7 +574,10 @@ export default function SessionPage() {
       .from("sessions")
       .update({ status: "open" })
       .eq("id", sessionId);
-    if (!updateError) await loadData();
+    if (!updateError) {
+      track("poll_reopened");
+      await loadData();
+    }
     setReopening(false);
   }
 
@@ -585,6 +597,7 @@ export default function SessionPage() {
       setDeleting(false);
       return;
     }
+    track("session_deleted");
     router.replace(`/groups/${groupId}`);
   }
 
@@ -611,6 +624,7 @@ export default function SessionPage() {
         const { error: msg } = await res.json();
         throw new Error(msg);
       }
+      track("session_completed");
       await loadData();
     } catch (err) {
       setError(friendlyError(err, "Couldn't complete the session. Try again."));
@@ -651,6 +665,7 @@ export default function SessionPage() {
       .from("payments")
       .update({ status: newStatus, marked_at: new Date().toISOString() })
       .eq("id", paymentId);
+    track("payment_marked", { status: newStatus });
     await loadData();
     setMarkingPaid(false);
   }
@@ -667,6 +682,7 @@ export default function SessionPage() {
         const { error: msg } = await res.json();
         throw new Error(msg);
       }
+      track("teams_formed");
       await loadData();
       setRevealing(true);
     } catch (err) {
